@@ -1,0 +1,55 @@
+{
+  "name": "@eva/procesador-pagos-sdk",
+  "version": "0.1.0",
+  "description": "SDK TypeScript para consumir el servicio Procesador-de-pagos",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./webhooks": {
+      "types": "./dist/webhooks.d.ts",
+      "import": "./dist/webhooks.js",
+      "require": "./dist/webhooks.cjs"
+    }
+  },
+  "files": [
+    "dist/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "build:local": "cross-env EVA_PAGOS_BUILD_ENV=local tsdown",
+    "build:dev": "cross-env EVA_PAGOS_BUILD_ENV=development tsdown",
+    "build:prod": "cross-env EVA_PAGOS_BUILD_ENV=production tsdown",
+    "pack:local": "pnpm run build:local && pnpm pack",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "prepublishOnly": "pnpm run typecheck && pnpm run test:run && pnpm run build:prod"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "cross-env": "^10.1.0",
+    "oxfmt": "^0.42.0",
+    "oxlint": "^1.59.0",
+    "tsdown": "^0.21.10",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.0"
+  }
+}
