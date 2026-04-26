@@ -57,7 +57,7 @@ const ctrl = new AbortController();
 
 const cliente = crearCliente({
   apiKey: process.env.EVA_PAGOS_API_KEY!,
-  timeout: 15_000,                    // ms — default 10_000
+  timeout: 15_000,                    // ms — default 10_000, rango 0..Number.MAX_SAFE_INTEGER
   headers: { 'x-trace-id': 't-42' },  // headers extra (los internos ganan ante colisión)
   fetch: globalThis.fetch,            // override para tests, custom retry layer, etc.
   signal: ctrl.signal,                // signal global del cliente — cancela TODAS las ops en vuelo
@@ -144,7 +144,7 @@ console.log(`Página ${r.data.pagination.page}/${r.data.pagination.totalPages}`)
 
 ### 4. Iterar todos los pagos pendientes (async iterator)
 
-`iterarPagos` es la **única excepción** al Result Pattern: yields `Pago` directo y lanza `Error` con `cause: Resultado` si la I/O falla. Patrón idiomático Stripe-node / AWS SDK v3 / Octokit (ver ADR-005).
+`iterarPagos` es la **única excepción** al Result Pattern: yields `PagoResumen` directo y lanza `Error` con `cause: Resultado` si la I/O falla. Patrón idiomático Stripe-node / AWS SDK v3 / Octokit (ver ADR-005).
 
 ```typescript
 import type { Resultado } from '@eva/procesador-pagos-sdk';
@@ -238,9 +238,7 @@ type Resultado<T> =
   | { success: false; error: string; codigo: 429; retryAfter?: number };
 ```
 
-- `codigo` es un union cerrado: `400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 500 | 502 | 503`.
-- `retryAfter` solo existe para `429` (si el header `Retry-After` viene numérico — segundos).
-- TypeScript strict prohíbe acceder a `r.data` antes de chequear `r.success`. Idiomático: `if (!r.success) return …`.
+- `retryAfter` solo existe para `429` (si el header `Retry-After` viene como delta numérico en segundos o como `HTTP-date`; el SDK lo normaliza a segundos).
 
 Helpers narrow:
 
@@ -264,7 +262,7 @@ El SDK respeta tres niveles de cancelación combinados con `AbortSignal.any`:
 2. **Por operación** — `cliente.pagos.crearPago(input, { signal })`.
 3. **Timeout interno** — `AbortSignal.timeout(timeout)` (default 10_000 ms).
 
-Cualquiera de los tres dispara abort. Si el aborto viene del consumidor (signals 1/2), el `AbortError` se re-lanza al consumidor. Si viene del timeout interno, retorna `Resultado.fallo(503)`.
+Cualquiera de los tres dispara abort. Si el aborto viene del consumidor (signals 1/2), el SDK retorna `Resultado.fallo(503)` con mensaje `Operación cancelada`. Si viene del timeout interno, retorna `Resultado.fallo(503)` con mensaje `Tiempo de espera agotado`.
 
 ---
 

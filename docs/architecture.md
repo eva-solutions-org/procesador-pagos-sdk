@@ -207,7 +207,7 @@ sequenceDiagram
 | ADR-002 | Result Pattern como contrato público. |
 | ADR-003 | Namespace agrupado `cliente.pagos.X`. |
 | ADR-004 | `compararFirmasSeguro` con primitivas nativas (fail-closed). |
-| ADR-005 | `iterarPagos` yields `Pago` directo + throws `Error(msg, { cause: Resultado })`. |
+| ADR-005 | `iterarPagos` yields `PagoResumen` directo + throws `Error(msg, { cause: Resultado })`. |
 | ADR-006 | Overrides `fetch`/`timeout`/`headers`/`signal`; URL nunca. |
 | ADR-007 | Defensa runtime contra build mismatch (síncrona al cargar). |
 | ADR-008 | Migración de `tsup` a `tsdown`. |

@@ -81,6 +81,8 @@ export async function* iterarPagos(filtros, options) {
 }
 ```
 
+En este SDK, `iterarPagos` emite `PagoResumen` (shape del endpoint de listado), no `PagoDetalle`.
+
 ---
 
 ## 3. Result Pattern
@@ -120,7 +122,7 @@ console.log(r.data.pagoId);
 
 ### Excepción justificada: `iterarPagos`
 
-`iterarPagos` yields `Pago` directo y lanza `Error(msg, { cause: Resultado })` on I/O failure. Idiomático Stripe-node / AWS SDK v3 / Octokit. Es la **única** excepción al Result Pattern. Documentado en ADR-005.
+`iterarPagos` yields `PagoResumen` directo y lanza `Error(msg, { cause: Resultado })` on I/O failure. Idiomático Stripe-node / AWS SDK v3 / Octokit. Es la **única** excepción al Result Pattern. Documentado en ADR-005.
 
 ---
 
@@ -228,7 +230,7 @@ Esto facilita re-verificar manualmente si hubo drift entre SDK y servicio.
 **Política dura**: la `apiKey` NO debe aparecer en `error.message`, `error.cause` serializado, ni JSDocs de errores.
 
 - Validación `apiKey` vacía → `throw new Error('apiKey requerida (string no vacío)')`. Sin valor.
-- Mapeo de errores HTTP → mensaje genérico extraído de `body.error` o `statusText`. Sin headers crudos.
+- Mapeo de errores HTTP → mensajes estables saneados por status. Sin `body.error`, `statusText` ni headers crudos.
 - Tests verifican con regex que `apiKey` (string conocida) NO aparece en `r.error`.
 
 ---

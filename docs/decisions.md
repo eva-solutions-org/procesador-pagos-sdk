@@ -146,7 +146,7 @@ Algoritmo:
 
 ---
 
-## ADR-005 — `iterarPagos` yields `Pago` directo + throws `Error(msg, { cause: Resultado })`
+## ADR-005 — `iterarPagos` yields `PagoResumen` directo + throws `Error(msg, { cause: Resultado })`
 
 **Estado**: Accepted (revertido tras auditoría — C3).
 **Fecha**: 2026-04.
@@ -155,12 +155,12 @@ Algoritmo:
 
 `iterarPagos` es async generator que pagina automáticamente. Dos modelos posibles:
 
-1. **`yield Pago`**: yields tipo de dominio directo. On I/O failure: `throw new Error(...)`. Idiomático **Stripe-node**, **AWS SDK v3**, **Octokit**, **Google Cloud Node**.
-2. **`yield Resultado<Pago>`**: cada elemento es un wrapped result. Consistente con el resto del SDK.
+1. **`yield PagoResumen`**: yields el shape real del endpoint de listado. On I/O failure: `throw new Error(...)`. Idiomático **Stripe-node**, **AWS SDK v3**, **Octokit**, **Google Cloud Node**.
+2. **`yield Resultado<PagoResumen>`**: cada elemento es un wrapped result. Consistente con el resto del SDK.
 
 ### Decisión
 
-**Modelo 1**: yields `Pago` directo. On I/O failure interno (network, 5xx, etc.) lanza:
+**Modelo 1**: yields `PagoResumen` directo. On I/O failure interno (network, 5xx, etc.) lanza:
 
 ```typescript
 throw new Error(r.error, { cause: r });  // r es Resultado<never> con codigo + error
@@ -169,6 +169,7 @@ throw new Error(r.error, { cause: r });  // r es Resultado<never> con codigo + e
 ### Consecuencias
 
 - (+) Idiomático: el desarrollador que conoce Stripe/AWS lee `for await (const pago of iter)` sin sorpresas.
+- (+) Alinea la firma pública con el payload real emitido por el endpoint de listado paginado.
 - (+) Permite `try/catch` con narrowing de `error.cause` para acceso al `Resultado` original.
 - (+) Es la única forma de propagar errores en async iterators sin reinventar el protocolo.
 - (−) Es la **única excepción** al Result Pattern del SDK. Documentado explícitamente en README + JSDoc + esta ADR.
@@ -336,7 +337,7 @@ Ver `engram://sdd/bootstrap-mvp/ux-final` (#1372) para los 9 patrones UX aprobad
 
 - **C1**: `verificarWebhookDesdeRequest` con `options.body?` (Hono+CF Workers).
 - **C2**: `401` para fallas auth/firma/secretKey, `422` para body no-JSON post-firma-OK y body ya consumido.
-- **C3**: `iterarPagos` yields `Pago` directo + throws `Error(msg, { cause: Resultado })` (ADR-005).
+- **C3**: `iterarPagos` yields `PagoResumen` directo + throws `Error(msg, { cause: Resultado })` (ADR-005).
 - **C4**: `compararFirmasSeguro` con primitivas nativas, fail-closed (ADR-004).
 - **C5**: defensa runtime contra build mismatch (ADR-007).
 - **C6**: SDK NO valida tamaño metadata localmente (servicio responde 413).

@@ -19,7 +19,7 @@ function crearCliente(opciones: OpcionesCliente): ClienteProcesadorPagos;
 
 interface OpcionesCliente {
   apiKey: string;                                    // requerido, no vacío
-  timeout?: number;                                  // ms — default 10_000
+  timeout?: number;                                  // ms — default 10_000, rango 0..Number.MAX_SAFE_INTEGER
   headers?: Record<string, string>;                  // headers extra (los internos ganan ante colisión)
   fetch?: typeof globalThis.fetch;                   // override (para tests, retry-layer custom, etc.)
   signal?: AbortSignal;                              // signal global del cliente — cancela TODAS las ops
@@ -33,6 +33,7 @@ interface ClienteProcesadorPagos {
 **Errores síncronos** (lanzados al llamar):
 
 - `apiKey` no string o vacío → `throw new Error('apiKey requerida (string no vacío)')`. NUNCA incluye el valor de la apiKey.
+- `timeout` fuera del rango válido de `AbortSignal.timeout()` → `throw new Error('timeout debe estar entre 0 y Number.MAX_SAFE_INTEGER (ms)')`.
 
 **Alias**: `createClienteProcesadorPagos` es exactamente `crearCliente` (mismo binding).
 
@@ -85,7 +86,7 @@ interface CrearPagoResponse {
 | `409` | `referenciaExterna` duplicada (servicio). |
 | `413` | `metadata` > 8KB (servicio — SDK no valida local, C6). |
 | `422` | Servicio rechazó por reglas de negocio. |
-| `429` | Rate limit. `retryAfter?: number` parseado del header. |
+| `429` | Rate limit. `retryAfter?: number` parseado del header `Retry-After`, ya venga como delta numérico o como `HTTP-date`. |
 | `503` | Network down / timeout / aborted. |
 
 ### 2.2 `cliente.pagos.consultarPago({ id, signal? }): Promise<Resultado<PagoDetalle>>`
@@ -151,7 +152,7 @@ interface ListarPagosResponse {
 
 **Validación local**: `limit > 100` → `400` sin tocar red. `estado` fuera del enum → `400`.
 
-### 2.4 `cliente.pagos.iterarPagos(filtros?, options?): AsyncGenerator<Pago, void, unknown>`
+### 2.4 `cliente.pagos.iterarPagos(filtros?, options?): AsyncGenerator<PagoResumen, void, unknown>`
 
 Async iterator que pagina automáticamente. **Única excepción al Result Pattern** (ADR-005).
 
@@ -159,15 +160,15 @@ Async iterator que pagina automáticamente. **Única excepción al Result Patter
 function iterarPagos(
   filtros?: FiltrarPagoInput,
   options?: { signal?: AbortSignal },
-): AsyncGenerator<Pago, void, unknown>;
+): AsyncGenerator<PagoResumen, void, unknown>;
 ```
 
 **Comportamiento**:
 
-- Yields `Pago` directo (NO `Resultado<Pago>`).
+- Yields `PagoResumen` directo (shape de listado de 10 campos; NO `Resultado<PagoResumen>` ni `PagoDetalle`).
 - On I/O failure: `throw new Error(r.error, { cause: r })` donde `r` es `Resultado<never>` con `codigo + error`.
 - Default `limit = 100` (NO 20 — I6).
-- `limit > 100` o `< 1` → throw síncrono al primer `.next()`.
+- `limit > 100` o `< 1` → throw síncrono al invocar `iterarPagos(...)`, antes de cualquier `.next()` o fetch.
 - Propaga `options.signal` al fetch interno (no chequeo manual de `signal.aborted` entre páginas).
 - Loop interno envuelto en `try { ... } finally { ... }` para cleanup observable on `break`.
 
@@ -288,6 +289,8 @@ type Resultado<T> =
   | { success: false; error: string; codigo: 429; retryAfter?: number };
 ```
 
+Para `429`, `retryAfter` se informa en segundos cuando el header `Retry-After` viene como delta numérico o como `HTTP-date`.
+
 ### 4.2 Helpers narrow
 
 ```typescript
@@ -320,14 +323,15 @@ Mapeo del status code del servicio al `Resultado.fallo()` que retorna el SDK.
 | 409 | 409 | `referenciaExterna` duplicada | crearPago. |
 | 413 | 413 | Body request excede límite del servicio (e.g. metadata > 8KB) | C6: SDK NO valida local. |
 | 422 | 422 | Reglas de negocio (estado terminal en cancel, saldo excedido en refund, etc.) | |
-| 429 | 429 + `retryAfter?` | Rate limit | I2: parseado del header `Retry-After` (numérico). |
+| 429 | 429 + `retryAfter?` | Rate limit | I2: parseado del header `Retry-After` tanto como delta numérico como `HTTP-date`, normalizado a segundos. |
 | 500 | 500 | Servicio crasheó | |
 | 502 | 502 | JSON inválido del servicio | El SDK no pudo parsear. |
 | 502 | 502 | Schema Zod fail al safeParse del response | El SDK no pudo validar. |
 | 502 | 502 | Status fuera del union (e.g. 418) | "Status HTTP inesperado: 418". |
-| 503 | 503 | Network error (TCP reset, DNS fail) | |
-| 503 | 503 | Timeout interno (`AbortSignal.timeout`) | |
-| 503 | 503 | Abort externo (cliente o op signal) | El `AbortError` se re-lanza al consumidor; NO retorna Resultado. |
+| 503 | 503 | Network error (TCP reset, DNS fail) | Mensaje estable: `Error de red al comunicarse con el servicio`. |
+| 503 | 503 | Redirect automático rechazado | Mensaje estable: `Redirect inesperado rechazado por seguridad`. |
+| 503 | 503 | Timeout interno (`AbortSignal.timeout`) | Mensaje estable: `Tiempo de espera agotado`. |
+| 503 | 503 | Abort externo (cliente o op signal) | Retorna `Resultado` con mensaje estable `Operación cancelada`. |
 
 Casos webhooks adicionales:
 

@@ -31,6 +31,7 @@ El SDK opera como **cliente backend-to-backend** que:
 | **Webhook forgery** (atacante simula servicio) | `verificarFirmaWebhook` rechaza firmas no calculadas con la `secretKey` (HMAC-SHA256 + timing-safe). |
 | **Body tampering** post-firma-válida | `JSON.parse` post-verificación: si el body fue modificado para no parsear, retorna `422`. |
 | **Header injection** en consumer-supplied `headers` | Headers internos (`x-api-key`, `Content-Type`) ganan ante colisión (override defensivo en `crearHttpClient`). |
+| **Leak de credenciales vía redirect automático** | `fetch` usa `redirect: 'error'`, así el SDK falla antes de reenviar `x-api-key` a otra ubicación. |
 | **Resource exhaustion** vía requests infinitos | Triple `AbortSignal` con timeout interno SIEMPRE presente (default 10_000 ms). El consumidor puede subir el timeout pero NO puede desactivarlo. |
 | **Memory leak** vía signals huérfanos | `AbortSignal.any` libera listeners cuando el primer signal aborta. Tests verifican cleanup en `iterarPagos.finally`. |
 
@@ -43,8 +44,10 @@ El SDK opera como **cliente backend-to-backend** que:
 ### Implementación
 
 - `crearCliente({ apiKey })` valida que sea string no-vacío y throws con mensaje **sin valor**: `'apiKey requerida (string no vacío)'`.
+- `crearCliente({ timeout })` valida rango `0..Number.MAX_SAFE_INTEGER` antes de delegar a `AbortSignal.timeout()`.
 - `crearHttpClient` añade `headers['x-api-key'] = apiKey` solo dentro del request. Headers consumidor NO pueden override.
-- `mapearErrorHttp` extrae `body.error` o `statusText` para el mensaje. NUNCA serializa `request.headers`.
+- `crearHttpClient` fuerza `redirect: 'error'` para no seguir redirects con credenciales adjuntas.
+- `mapearErrorHttp` retorna mensajes estables por status para toda respuesta no-OK. No refleja `body.error`, headers crudos ni detalles del upstream.
 - Tests críticos en `tests/core/http-client.mock.test.ts`: regex check que `apiKey` (string conocida en el test) NO aparece en `r.error` ni en `JSON.stringify(r)`.
 
 ### Defensa en profundidad
