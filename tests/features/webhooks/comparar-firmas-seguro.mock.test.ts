@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { compararFirmasSeguro } from '../../../src/features/webhooks/infrastructure/comparar-firmas-seguro.js';
+import { compararFirmasSeguro } from '#test-internals/webhooks';
 
 /**
  * Tests C4 / ADR-004:

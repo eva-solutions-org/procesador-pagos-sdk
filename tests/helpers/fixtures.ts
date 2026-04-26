@@ -84,3 +84,33 @@ export const inputCrearPagoValido = () =>
     tipo: 'pago_unico' as const,
     referenciaExterna: 'order-1',
   }) as const;
+
+/**
+ * Helper de test para generar firma HMAC-SHA256 válida.
+ * 
+ * Implementación independiente usando WebCrypto (NO reutiliza calcularHmacSha256
+ * del código productivo para evitar acoplamiento de tests a implementación).
+ * 
+ * Retorna firma en formato hex lowercase (64 chars).
+ */
+export const generarFirmaWebhookTest = async (
+  body: string | Uint8Array,
+  secretKey: string,
+): Promise<string> => {
+  const encoder = new TextEncoder();
+  const key = await globalThis.crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secretKey),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const firma = await globalThis.crypto.subtle.sign(
+    'HMAC',
+    key,
+    (typeof body === "string" ? encoder.encode(body) : body) as BufferSource,
+  );
+  return Array.from(new Uint8Array(firma))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+};

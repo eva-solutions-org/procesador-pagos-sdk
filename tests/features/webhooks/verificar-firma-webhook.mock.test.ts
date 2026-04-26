@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { verificarFirmaWebhook } from '../../../src/webhooks.js';
-import { calcularHmacSha256 } from '../../../src/features/webhooks/infrastructure/calcular-hmac-sha256.js';
-import { SECRET_KEY_TEST } from '../../helpers/fixtures.js';
+import { SECRET_KEY_TEST, generarFirmaWebhookTest } from '../../helpers/fixtures.js';
 
 /**
  * Tests REQ-WEBHOOKS-001 (C2 + I4).
@@ -13,7 +12,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
   const body = JSON.stringify({ event: 'pago.completado', data: { id: 'pago_1' } });
 
   it('Given firma válida Then Resultado.exito', async () => {
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const r = await verificarFirmaWebhook({
       body,
       signature: `sha256=${firma}`,
@@ -23,7 +22,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
   });
 
   it('Given firma sin prefijo sha256= Then 401', async () => {
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const r = await verificarFirmaWebhook({
       body,
       signature: firma, // sin prefijo
@@ -42,7 +41,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
   });
 
   it('Given prefijo MAYÚSCULAS SHA256= Then 401 (I4 case-sensitive)', async () => {
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const r = await verificarFirmaWebhook({
       body,
       signature: `SHA256=${firma}`,
@@ -55,7 +54,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
   });
 
   it('Given prefijo capitalizado Sha256= Then 401 (I4)', async () => {
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const r = await verificarFirmaWebhook({
       body,
       signature: `Sha256=${firma}`,
@@ -65,7 +64,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
   });
 
   it('Given hex con MAYÚSCULAS Then 401 (I4)', async () => {
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const r = await verificarFirmaWebhook({
       body,
       signature: `sha256=${firma.toUpperCase()}`,
@@ -75,7 +74,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
   });
 
   it('Given firma alterada (1 byte) Then 401 firma inválida', async () => {
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     // Alteramos el último char: si era hex char, cambiamos por otro distinto
     const ultimoChar = firma.charAt(firma.length - 1);
     const reemplazo = ultimoChar === 'a' ? 'b' : 'a';
@@ -106,7 +105,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
 
   it('Given body Uint8Array con firma correcta Then Resultado.exito', async () => {
     const bodyBytes = new TextEncoder().encode(body);
-    const firma = await calcularHmacSha256(bodyBytes, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(bodyBytes, SECRET_KEY_TEST);
     const r = await verificarFirmaWebhook({
       body: bodyBytes,
       signature: `sha256=${firma}`,
@@ -116,7 +115,7 @@ describe('verificarFirmaWebhook — REQ-WEBHOOKS-001', () => {
   });
 
   it('Given secretKey distinta Then 401', async () => {
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const r = await verificarFirmaWebhook({
       body,
       signature: `sha256=${firma}`,

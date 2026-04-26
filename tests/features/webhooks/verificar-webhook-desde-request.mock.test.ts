@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { verificarWebhookDesdeRequest } from '../../../src/webhooks.js';
-import { calcularHmacSha256 } from '../../../src/features/webhooks/infrastructure/calcular-hmac-sha256.js';
-import { SECRET_KEY_TEST } from '../../helpers/fixtures.js';
+import { SECRET_KEY_TEST, generarFirmaWebhookTest } from '../../helpers/fixtures.js';
 
 /**
  * Tests REQ-WEBHOOKS-002 (C1 + C2 + UX-6).
@@ -17,7 +16,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
 
   it('Given header X-SIGNATURE en MAYÚSCULAS Then funciona (case-insensitive en NOMBRE — C2)', async () => {
     const body = buildPayload();
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-SIGNATURE': `sha256=${firma}` },
@@ -32,7 +31,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
 
   it('Given options.body presente Then NO se llama request.text() (C1)', async () => {
     const body = buildPayload();
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-Signature': `sha256=${firma}` },
@@ -47,7 +46,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
 
   it('Given options.body ausente Then se llama request.text() y funciona', async () => {
     const body = buildPayload();
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-Signature': `sha256=${firma}` },
@@ -60,7 +59,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
   it('Given options.body Uint8Array Then se decodifica UTF-8 antes del JSON.parse (C1)', async () => {
     const body = buildPayload();
     const bodyBytes = new TextEncoder().encode(body);
-    const firma = await calcularHmacSha256(bodyBytes, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(bodyBytes, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-Signature': `sha256=${firma}` },
@@ -74,7 +73,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
 
   it('Given body ya consumido sin options.body Then 422 (C1+C2)', async () => {
     const body = buildPayload();
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-Signature': `sha256=${firma}` },
@@ -103,7 +102,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
 
   it('Given body no-JSON post-firma-OK Then 422 (C2)', async () => {
     const body = '<xml>not-json</xml>';
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-Signature': `sha256=${firma}` },
@@ -118,7 +117,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
 
   it('Given firma OK Then payload retornado es resultado de JSON.parse', async () => {
     const body = JSON.stringify({ tipo: 'pago.actualizado', data: { x: 42 } });
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-Signature': `sha256=${firma}` },
@@ -133,7 +132,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
 
   it('Given secretKey vacía Then propaga 401 desde verificarFirmaWebhook (C2)', async () => {
     const body = buildPayload();
-    const firma = await calcularHmacSha256(body, SECRET_KEY_TEST);
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
       method: 'POST',
       headers: { 'X-Signature': `sha256=${firma}` },
