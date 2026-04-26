@@ -19,19 +19,19 @@ La URL del servicio se inyecta en build-time vía `tsdown define` (`__SDK_API_UR
 
 ```typescript
 // build-time
-__SDK_API_URL__ = 'https://procesador-de-pagos.workers.dev'  // production
+__SDK_API_URL__ = "https://procesador-de-pagos.workers.dev"; // production
 
 // runtime
-crearCliente({ apiKey, /* SIN url */ })
+crearCliente({ apiKey /* SIN url */ });
 ```
 
 Tres versiones distintas del SDK son publicadas (una por entorno):
 
-| Versión | URL inyectada |
-|---|---|
-| `@eva/procesador-pagos-sdk@local` | `http://localhost:8787` |
-| `@eva/procesador-pagos-sdk@dev` | URL development (placeholder) |
-| `@eva/procesador-pagos-sdk@prod` | URL production (placeholder) |
+| Versión                           | URL inyectada                 |
+| --------------------------------- | ----------------------------- |
+| `@eva/procesador-pagos-sdk@local` | `http://localhost:6000`       |
+| `@eva/procesador-pagos-sdk@dev`   | URL development (placeholder) |
+| `@eva/procesador-pagos-sdk@prod`  | URL production (placeholder)  |
 
 ### Consecuencias
 
@@ -66,7 +66,11 @@ Hay dos modelos para errores en SDKs:
 ```typescript
 type Resultado<T> =
   | { success: true; data: T }
-  | { success: false; error: string; codigo: 400|401|403|404|409|413|422|500|502|503 }
+  | {
+      success: false;
+      error: string;
+      codigo: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 502 | 503;
+    }
   | { success: false; error: string; codigo: 429; retryAfter?: number };
 ```
 
@@ -163,7 +167,7 @@ Algoritmo:
 **Modelo 1**: yields `PagoResumen` directo. On I/O failure interno (network, 5xx, etc.) lanza:
 
 ```typescript
-throw new Error(r.error, { cause: r });  // r es Resultado<never> con codigo + error
+throw new Error(r.error, { cause: r }); // r es Resultado<never> con codigo + error
 ```
 
 ### Consecuencias
@@ -178,10 +182,10 @@ throw new Error(r.error, { cause: r });  // r es Resultado<never> con codigo + e
 ### Idiom recomendado
 
 ```typescript
-import type { Resultado } from '@eva/procesador-pagos-sdk';
+import type { Resultado } from "@eva/procesador-pagos-sdk";
 
 try {
-  for await (const pago of cliente.pagos.iterarPagos({ estado: 'pendiente' })) {
+  for await (const pago of cliente.pagos.iterarPagos({ estado: "pendiente" })) {
     await procesar(pago);
   }
 } catch (err) {
@@ -245,10 +249,10 @@ try {
 `src/core/config.ts` lanza síncronicamente al cargar el módulo si:
 
 ```typescript
-if (__SDK_API_URL__.includes('localhost') && __SDK_BUILD_ENV__ !== 'local') {
+if (__SDK_API_URL__.includes("localhost") && __SDK_BUILD_ENV__ !== "local") {
   throw new Error(
     `[procesador-pagos-sdk] Build mismatch: __SDK_API_URL__ apunta a localhost (${url}) ` +
-    `pero __SDK_BUILD_ENV__ es "${env}". Reconstruir con build:dev o build:prod antes de publicar.`,
+      `pero __SDK_BUILD_ENV__ es "${env}". Reconstruir con build:dev o build:prod antes de publicar.`,
   );
 }
 ```

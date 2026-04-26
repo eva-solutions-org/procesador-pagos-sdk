@@ -2,14 +2,14 @@
 
 ## 1. Naming
 
-| Tipo | Convención | Ejemplo |
-|---|---|---|
-| Archivos | `kebab-case` | `crear-pago.ts`, `comparar-firmas-seguro.ts` |
-| Tipos / Interfaces | `PascalCase` | `Resultado`, `ClienteProcesadorPagos`, `CrearPagoInput` |
-| Funciones / variables | `camelCase` en español | `crearPago`, `pagosFacade`, `verificarFirmaWebhook` |
-| Términos técnicos | `camelCase` en inglés cuando es estándar | `apiKey`, `signal`, `fetch`, `timeout`, `headers`, `signature`, `secretKey`, `payload` |
-| Constantes top-level | `UPPER_SNAKE_CASE` | `ESTADOS_PAGO`, `REGEX_FIRMA_WEBHOOK`, `SDK_API_URL` |
-| Tipos derivados de constantes | `(typeof X)[number]` | `type EstadoPago = (typeof ESTADOS_PAGO)[number]` |
+| Tipo                          | Convención                               | Ejemplo                                                                                |
+| ----------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| Archivos                      | `kebab-case`                             | `crear-pago.ts`, `comparar-firmas-seguro.ts`                                           |
+| Tipos / Interfaces            | `PascalCase`                             | `Resultado`, `ClienteProcesadorPagos`, `CrearPagoInput`                                |
+| Funciones / variables         | `camelCase` en español                   | `crearPago`, `pagosFacade`, `verificarFirmaWebhook`                                    |
+| Términos técnicos             | `camelCase` en inglés cuando es estándar | `apiKey`, `signal`, `fetch`, `timeout`, `headers`, `signature`, `secretKey`, `payload` |
+| Constantes top-level          | `UPPER_SNAKE_CASE`                       | `ESTADOS_PAGO`, `REGEX_FIRMA_WEBHOOK`, `SDK_API_URL`                                   |
+| Tipos derivados de constantes | `(typeof X)[number]`                     | `type EstadoPago = (typeof ESTADOS_PAGO)[number]`                                      |
 
 ### Reglas mixtas español/inglés
 
@@ -94,7 +94,11 @@ Todas las operaciones de aplicación retornan `Promise<Resultado<T>>`.
 ```typescript
 type Resultado<T> =
   | { success: true; data: T }
-  | { success: false; error: string; codigo: 400|401|403|404|409|413|422|500|502|503 }
+  | {
+      success: false;
+      error: string;
+      codigo: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 502 | 503;
+    }
   | { success: false; error: string; codigo: 429; retryAfter?: number };
 ```
 
@@ -134,10 +138,10 @@ Cada feature expone un **único punto de entrada público** vía `index.ts` (bar
 
 ```typescript
 // ✅ Correcto: import desde barrel del feature.
-import { pagosFacade } from './features/pagos/index.js';
+import { pagosFacade } from "./features/pagos/index.js";
 
 // ❌ Incorrecto: import de archivo interno del feature.
-import { crearPago } from './features/pagos/application/crear-pago.js';
+import { crearPago } from "./features/pagos/application/crear-pago.js";
 ```
 
 Esto:
@@ -150,12 +154,35 @@ Esto:
 
 Dentro de un mismo feature, los archivos pueden importarse entre sí sin pasar por el barrel (eso desbloquea el barrel mismo). Ejemplo: `application/iterar-pagos.ts` puede importar `application/listar-pagos.ts` directamente.
 
+### Excepción de testing: entrypoint privado para internals
+
+Los tests de módulos internos (infrastructure, domain helpers) pueden necesitar importar implementaciones que NO están en el barrel público. Para estos casos:
+
+1. **Usar alias privado del workspace** (`tsconfig.json` + `vitest.config.ts`) — NO paths concretos.
+2. El alias apunta a un archivo `test-internals.ts` dentro del feature que reexporta SOLO lo necesario para tests.
+3. **NUNCA** agregar esos exports al barrel público, a `package.json#exports` ni a metadata publicada del paquete.
+
+**Ejemplo:**
+
+```typescript
+// tsconfig.json / vitest.config.ts
+// alias privado: '#test-internals/webhooks' -> './src/features/webhooks/test-internals.ts'
+
+// src/features/webhooks/test-internals.ts
+export { compararFirmasSeguro } from "./infrastructure/comparar-firmas-seguro.js";
+
+// tests/features/webhooks/comparar-firmas-seguro.mock.test.ts
+import { compararFirmasSeguro } from "#test-internals/webhooks";
+```
+
+**Restricción:** los tests NO deben reutilizar funciones productivas como fixtures. Si un test necesita generar datos (ej: firma HMAC), debe tener su propio helper en `tests/helpers/` con implementación independiente.
+
 ### Imports `.js` con TypeScript
 
 `tsconfig.json` usa `"moduleResolution": "Bundler"` y los imports incluyen extensión `.js` (ESM nativo):
 
 ```typescript
-import { crearHttpClient } from '../../core/http-client/index.js';
+import { crearHttpClient } from "../../core/http-client/index.js";
 ```
 
 TS resuelve el `.js` al `.ts` correspondiente. Compatible con tsdown ESM output.
@@ -171,7 +198,7 @@ Validación de datos externos (consumidor → SDK, servicio → SDK) usa `Zod.sa
 ```typescript
 const parsed = crearPagoInputSchema.safeParse(input);
 if (!parsed.success) {
-  return errorValidacion('Input inválido: ' + parsed.error.message);
+  return errorValidacion("Input inválido: " + parsed.error.message);
 }
 // usar parsed.data
 ```

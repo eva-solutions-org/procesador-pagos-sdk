@@ -1,20 +1,36 @@
-# @eva/procesador-pagos-sdk
+# 💳 @eva/procesador-pagos-sdk
 
 SDK TypeScript para consumir el servicio Procesador-de-pagos. Diseñado para ser **extremadamente simple por defecto** con control avanzado opcional.
 
-- Runtime targets: Node 18+, Cloudflare Workers (con `nodejs_compat`), Vercel Edge Runtime.
-- **No browser** (la `apiKey` es secreta).
-- Result Pattern como contrato — nunca lanza para errores de negocio.
-- URL del servicio horneada en build-time (no se configura en runtime).
-- Verificación de webhooks salientes con HMAC-SHA256 timing-safe.
-- Sin dependencias en runtime más allá de `zod`.
+### 🎯 Características
 
-Versión actual: `0.1.0` (initial release).
-Servicio testeado contra commit: `380874771a21b56bd42f1db23c60627c62209327`.
+```
+✓ Runtime targets   Node 18+, Cloudflare Workers, Vercel Edge
+✓ Seguridad        apiKey nunca expuesta (backend only)
+✓ Error Handling   Result Pattern — nunca lanza errores de negocio
+✓ Config           URL en build-time, zero runtime surprises
+✓ Webhooks         HMAC-SHA256 timing-safe
+✓ Dependencies     Zod, nada más
+```
+
+**No browser** — la `apiKey` es secreta y debe estar en el servidor.
+
+**Versión actual:** `0.1.0` (initial release) | **Testeado contra:** `380874771a21b56bd42f1db23c60627c62209327`
+
+### 🗺️ Mapa rápido
+
+```mermaid
+flowchart LR
+  A[Tu backend o edge runtime] --> B[crearCliente]
+  B --> C[cliente.pagos]
+  B --> D[@eva/procesador-pagos-sdk/webhooks]
+  C --> E[Servicio Procesador-de-pagos]
+  D --> F[Verificación HMAC-SHA256]
+```
 
 ---
 
-## Instalación
+## 📦 Instalación
 
 ```bash
 pnpm add @eva/procesador-pagos-sdk
@@ -24,18 +40,18 @@ pnpm add @eva/procesador-pagos-sdk
 
 ---
 
-## Quickstart (zero-config)
+## ⚡ Quickstart (zero-config)
 
 ```typescript
-import { crearCliente } from '@eva/procesador-pagos-sdk';
+import { crearCliente } from "@eva/procesador-pagos-sdk";
 
 const cliente = crearCliente({ apiKey: process.env.EVA_PAGOS_API_KEY! });
 
 const resultado = await cliente.pagos.crearPago({
-  monto: '150.00',
-  moneda: 'USD',
-  tipo: 'pago_unico',
-  referenciaExterna: 'orden-123',
+  monto: "150.00",
+  moneda: "USD",
+  tipo: "pago_unico",
+  referenciaExterna: "orden-123",
 });
 
 if (!resultado.success) {
@@ -43,12 +59,12 @@ if (!resultado.success) {
   return;
 }
 
-console.log('Pago creado:', resultado.data.pagoId);
+console.log("Pago creado:", resultado.data.pagoId);
 ```
 
 ---
 
-## Configuración avanzada (opcional)
+## 🔧 Configuración avanzada (opcional)
 
 Todo es opt-in. Si no especificás nada, el SDK usa defaults razonables.
 
@@ -57,10 +73,10 @@ const ctrl = new AbortController();
 
 const cliente = crearCliente({
   apiKey: process.env.EVA_PAGOS_API_KEY!,
-  timeout: 15_000,                    // ms — default 10_000, rango 0..Number.MAX_SAFE_INTEGER
-  headers: { 'x-trace-id': 't-42' },  // headers extra (los internos ganan ante colisión)
-  fetch: globalThis.fetch,            // override para tests, custom retry layer, etc.
-  signal: ctrl.signal,                // signal global del cliente — cancela TODAS las ops en vuelo
+  timeout: 15_000, // ms — default 10_000, rango 0..Number.MAX_SAFE_INTEGER
+  headers: { "x-trace-id": "t-42" }, // headers extra (los internos ganan ante colisión)
+  fetch: globalThis.fetch, // override para tests, custom retry layer, etc.
+  signal: ctrl.signal, // signal global del cliente — cancela TODAS las ops en vuelo
 });
 
 // `ctrl.abort()` cancela cualquier request HTTP que el cliente esté ejecutando.
@@ -70,36 +86,36 @@ URL base, prefijo `x-api-key`, mapeo de errores HTTP — **no son configurables*
 
 ---
 
-## Operaciones disponibles
+## 🛠️ Operaciones disponibles
 
-| Operación | Descripción |
-|---|---|
-| `cliente.pagos.crearPago(input, options?)` | Crea un nuevo pago. Retorna shape "creado" (10 campos). |
-| `cliente.pagos.consultarPago({ id, signal? })` | Trae un pago por ID. Retorna shape "detalle" (22 campos). |
-| `cliente.pagos.listarPagos(filtros?, options?)` | Lista paginada (manual). |
-| `cliente.pagos.iterarPagos(filtros?, options?)` | Async iterator que pagina automáticamente. |
-| `cliente.pagos.cancelarPago({ id, signal? })` | Cancela pago en estado terminal-no. |
-| `cliente.pagos.reembolsarPago({ id, monto?, signal? })` | Reembolso total (sin `monto`) o parcial. |
+| Operación                                               | Descripción                                               |
+| ------------------------------------------------------- | --------------------------------------------------------- |
+| `cliente.pagos.crearPago(input, options?)`              | Crea un nuevo pago. Retorna shape "creado" (10 campos).   |
+| `cliente.pagos.consultarPago({ id, signal? })`          | Trae un pago por ID. Retorna shape "detalle" (22 campos). |
+| `cliente.pagos.listarPagos(filtros?, options?)`         | Lista paginada (manual).                                  |
+| `cliente.pagos.iterarPagos(filtros?, options?)`         | Async iterator que pagina automáticamente.                |
+| `cliente.pagos.cancelarPago({ id, signal? })`           | Cancela pago en estado terminal-no.                       |
+| `cliente.pagos.reembolsarPago({ id, monto?, signal? })` | Reembolso total (sin `monto`) o parcial.                  |
 
-Helpers para webhooks (en subpath `/webhooks`):
+**Webhooks** (en subpath `/webhooks`):
 
-| Función | Descripción |
-|---|---|
-| `verificarFirmaWebhook({ body, signature, secretKey })` | Primitive síncrona de bajo nivel. |
+| Función                                                      | Descripción                                 |
+| ------------------------------------------------------------ | ------------------------------------------- |
+| `verificarFirmaWebhook({ body, signature, secretKey })`      | Primitive síncrona de bajo nivel.           |
 | `verificarWebhookDesdeRequest(request, secretKey, options?)` | Wrapper sobre `Request` con manejo de body. |
 
 ---
 
-## Snippets validados (UX final)
+## 📚 Snippets validados (UX final)
 
 ### 1. Crear pago — caso simple
 
 ```typescript
 const r = await cliente.pagos.crearPago({
-  monto: '150.00',
-  moneda: 'USD',
-  tipo: 'pago_unico',
-  referenciaExterna: 'orden-42',
+  monto: "150.00",
+  moneda: "USD",
+  tipo: "pago_unico",
+  referenciaExterna: "orden-42",
 });
 
 if (!r.success) {
@@ -114,14 +130,14 @@ console.log(r.data.pagoId, r.data.estado, r.data.paymentLink);
 
 ```typescript
 const r = await cliente.pagos.crearPago({
-  monto: '5000.00',
-  moneda: 'BOB',
-  tipo: 'suscripcion',
-  referenciaExterna: 'sub-2026-04-arturo',
-  titular: { nombre: 'Arturo Rodas', email: 'arturo@daida.com' },
-  descripcion: 'Plan mensual',
-  metadata: { plan: 'pro', cycle: 'monthly' },
-  expiresAt: '2026-05-25T00:00:00Z',
+  monto: "5000.00",
+  moneda: "BOB",
+  tipo: "suscripcion",
+  referenciaExterna: "sub-2026-04-arturo",
+  titular: { nombre: "Arturo Rodas", email: "arturo@daida.com" },
+  descripcion: "Plan mensual",
+  metadata: { plan: "pro", cycle: "monthly" },
+  expiresAt: "2026-05-25T00:00:00Z",
 });
 ```
 
@@ -129,7 +145,7 @@ const r = await cliente.pagos.crearPago({
 
 ```typescript
 const r = await cliente.pagos.listarPagos({
-  estado: 'pendiente',
+  estado: "pendiente",
   page: 1,
   limit: 50,
 });
@@ -147,14 +163,14 @@ console.log(`Página ${r.data.pagination.page}/${r.data.pagination.totalPages}`)
 `iterarPagos` es la **única excepción** al Result Pattern: yields `PagoResumen` directo y lanza `Error` con `cause: Resultado` si la I/O falla. Patrón idiomático Stripe-node / AWS SDK v3 / Octokit (ver ADR-005).
 
 ```typescript
-import type { Resultado } from '@eva/procesador-pagos-sdk';
+import type { Resultado } from "@eva/procesador-pagos-sdk";
 
 try {
-  for await (const pago of cliente.pagos.iterarPagos({ estado: 'pendiente' })) {
+  for await (const pago of cliente.pagos.iterarPagos({ estado: "pendiente" })) {
     await procesar(pago);
   }
 } catch (err) {
-  if (err instanceof Error && err.cause && typeof err.cause === 'object') {
+  if (err instanceof Error && err.cause && typeof err.cause === "object") {
     const causa = err.cause as Resultado<never> & { success: false };
     console.error(`Iter falló en página: ${causa.codigo} — ${causa.error}`);
   } else {
@@ -167,10 +183,10 @@ try {
 
 ```typescript
 // Total: omitir `monto` — el SDK envía body `{}` (NUNCA `{ monto: undefined }`).
-await cliente.pagos.reembolsarPago({ id: 'pago-123' });
+await cliente.pagos.reembolsarPago({ id: "pago-123" });
 
 // Parcial: monto formato `^(?:0|[1-9]\d{0,7})\.\d{2}$`.
-await cliente.pagos.reembolsarPago({ id: 'pago-123', monto: '50.00' });
+await cliente.pagos.reembolsarPago({ id: "pago-123", monto: "50.00" });
 ```
 
 ### 6. Webhooks — Hono + Cloudflare Workers (idiomático C1)
@@ -178,14 +194,14 @@ await cliente.pagos.reembolsarPago({ id: 'pago-123', monto: '50.00' });
 En Hono `c.req.raw` ya pudo haber sido leído por middleware. Pasá el body explícito para evitar el `TypeError` de `request.text()` post-consumo.
 
 ```typescript
-import { verificarWebhookDesdeRequest } from '@eva/procesador-pagos-sdk/webhooks';
+import { verificarWebhookDesdeRequest } from "@eva/procesador-pagos-sdk/webhooks";
 
-app.post('/webhooks/pagos', async (c) => {
+app.post("/webhooks/pagos", async (c) => {
   const body = await c.req.text(); // primero leemos
   const r = await verificarWebhookDesdeRequest(
     c.req.raw,
     c.env.PAGOS_WEBHOOK_SECRET,
-    { body },                       // pasamos el body explícito (C1)
+    { body }, // pasamos el body explícito (C1)
   );
 
   if (!r.success) {
@@ -214,11 +230,11 @@ if (!r.success) {
 ### 8. Webhooks — primitive de bajo nivel
 
 ```typescript
-import { verificarFirmaWebhook } from '@eva/procesador-pagos-sdk/webhooks';
+import { verificarFirmaWebhook } from "@eva/procesador-pagos-sdk/webhooks";
 
 const r = await verificarFirmaWebhook({
-  body: rawBody,                 // string | Uint8Array
-  signature: 'sha256=abcd...',   // viene del header X-Signature
+  body: rawBody, // string | Uint8Array
+  signature: "sha256=abcd...", // viene del header X-Signature
   secretKey: process.env.SECRET!,
 });
 
@@ -227,14 +243,18 @@ const r = await verificarFirmaWebhook({
 
 ---
 
-## Result Pattern
+## 📋 Result Pattern
 
 Todas las operaciones (excepto `iterarPagos`) retornan `Resultado<T>`:
 
 ```typescript
 type Resultado<T> =
   | { success: true; data: T }
-  | { success: false; error: string; codigo: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 502 | 503 }
+  | {
+      success: false;
+      error: string;
+      codigo: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 502 | 503;
+    }
   | { success: false; error: string; codigo: 429; retryAfter?: number };
 ```
 
@@ -243,7 +263,7 @@ type Resultado<T> =
 Helpers narrow:
 
 ```typescript
-import { esExitoso, esFallido } from '@eva/procesador-pagos-sdk';
+import { esExitoso, esFallido } from "@eva/procesador-pagos-sdk";
 
 if (esExitoso(r)) {
   console.log(r.data);
@@ -254,7 +274,7 @@ if (esExitoso(r)) {
 
 ---
 
-## Cancelación: triple AbortSignal
+## 🚫 Cancelación: triple AbortSignal
 
 El SDK respeta tres niveles de cancelación combinados con `AbortSignal.any`:
 
@@ -264,21 +284,31 @@ El SDK respeta tres niveles de cancelación combinados con `AbortSignal.any`:
 
 Cualquiera de los tres dispara abort. Si el aborto viene del consumidor (signals 1/2), el SDK retorna `Resultado.fallo(503)` con mensaje `Operación cancelada`. Si viene del timeout interno, retorna `Resultado.fallo(503)` con mensaje `Tiempo de espera agotado`.
 
+```
+Cliente global (signal en crearCliente)
+    ↓
+    └─→ AbortSignal.any([...])
+    ├─→ Por operación (signal en crearPago, etc.)
+    ├─→ Timeout interno (default 10s)
+    ↓
+  Resultado.fallo(503) — "Operación cancelada" o "Tiempo de espera agotado"
+```
+
 ---
 
-## Configuración de build (contribuidores)
+## 🔨 Configuración de build (contribuidores)
 
 Variables de entorno **al construir el SDK** (no al consumirlo):
 
-| Variable | Valores | Default |
-|---|---|---|
+| Variable              | Valores                              | Default            |
+| --------------------- | ------------------------------------ | ------------------ |
 | `EVA_PAGOS_BUILD_ENV` | `local`, `development`, `production` | `local` (con warn) |
 
 Scripts:
 
 ```bash
 pnpm install
-pnpm build:local      # __SDK_API_URL__ = http://localhost:8787
+pnpm build:local      # __SDK_API_URL__ = http://localhost:6000
 pnpm build:dev        # __SDK_API_URL__ = https://procesador-de-pagos-dev.workers.dev (placeholder)
 pnpm build:prod       # __SDK_API_URL__ = https://procesador-de-pagos.workers.dev   (placeholder)
 pnpm typecheck
@@ -293,20 +323,20 @@ Defensa runtime (ADR-007 / C5): si el bundle final apunta a `localhost` pero `__
 
 ---
 
-## Documentación
+## 📖 Documentación
 
-| Documento | Contenido |
-|---|---|
-| `docs/architecture.md` | Capas, flujo HTTP, flujo webhook (mermaid). |
-| `docs/api.md` | Referencia completa de la API pública. |
-| `docs/configuration.md` | Setup consumidor + contribuidor, build-per-env. |
-| `docs/conventions.md` | Naming, paradigma funcional, Result Pattern, imports. |
-| `docs/decisions.md` | 8 ADRs (ADR-001 a ADR-008). |
-| `docs/security.md` | Modelo de amenazas, política `apiKey nunca en error`, HMAC fail-closed. |
-| `CHANGELOG.md` | SemVer + Conventional Commits. |
+| Documento               | Contenido                                                               |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `docs/architecture.md`  | Capas, flujo HTTP, flujo webhook (mermaid).                             |
+| `docs/api.md`           | Referencia completa de la API pública.                                  |
+| `docs/configuration.md` | Setup consumidor + contribuidor, build-per-env.                         |
+| `docs/conventions.md`   | Naming, paradigma funcional, Result Pattern, imports.                   |
+| `docs/decisions.md`     | 8 ADRs (ADR-001 a ADR-008).                                             |
+| `docs/security.md`      | Modelo de amenazas, política `apiKey nunca en error`, HMAC fail-closed. |
+| `CHANGELOG.md`          | SemVer + Conventional Commits.                                          |
 
 ---
 
-## Licencia
+## 📄 Licencia
 
 Ver [`LICENSE`](./LICENSE).

@@ -20,20 +20,20 @@ const cliente = crearCliente({ apiKey: process.env.EVA_PAGOS_API_KEY! });
 
 ### Variables de entorno recomendadas
 
-| Variable | Descripción |
-|---|---|
-| `EVA_PAGOS_API_KEY` | API key del proyecto. Convención del ecosistema `@eva/*`. NO tiene que llamarse así, es solo sugerencia. |
-| `EVA_PAGOS_WEBHOOK_SECRET` | secretKey HMAC. Solo necesaria en handlers de webhooks. |
+| Variable                   | Descripción                                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `EVA_PAGOS_API_KEY`        | API key del proyecto. Convención del ecosistema `@eva/*`. NO tiene que llamarse así, es solo sugerencia. |
+| `EVA_PAGOS_WEBHOOK_SECRET` | secretKey HMAC. Solo necesaria en handlers de webhooks.                                                  |
 
 ### Cómo elegir entre `dev` y `prod` builds
 
 Tu pipeline de despliegue determina qué versión del SDK instalás:
 
-| Entorno consumidor | Versión del SDK |
-|---|---|
-| Desarrollo local | `@eva/procesador-pagos-sdk@local` (apunta a `http://localhost:8787`) |
-| Staging / development | Tag/version `dev` (apunta a la URL development) |
-| Producción | Tag/version `prod` (apunta a la URL production) |
+| Entorno consumidor    | Versión del SDK                                                      |
+| --------------------- | -------------------------------------------------------------------- |
+| Desarrollo local      | `@eva/procesador-pagos-sdk@local` (apunta a `http://localhost:6000`) |
+| Staging / development | Tag/version `dev` (apunta a la URL development)                      |
+| Producción            | Tag/version `prod` (apunta a la URL production)                      |
 
 Tu `package.json` o lockfile fija qué bundle usás. **No es runtime configurable** por diseño (ADR-001).
 
@@ -51,19 +51,19 @@ pnpm install
 
 ### Variables de build
 
-| Variable | Valores | Default | Acción |
-|---|---|---|---|
+| Variable              | Valores                              | Default                      | Acción                                            |
+| --------------------- | ------------------------------------ | ---------------------------- | ------------------------------------------------- |
 | `EVA_PAGOS_BUILD_ENV` | `local`, `development`, `production` | `local` (con `console.warn`) | Selecciona la URL inyectada en `__SDK_API_URL__`. |
 
 `tsdown.config.ts` lee esta variable y resuelve la URL contra una tabla:
 
 ```typescript
 const URLS_POR_ENTORNO: Record<BuildEnv, string> = {
-  local: 'http://localhost:8787',
+  local: "http://localhost:6000",
   // TODO: confirmar con plataforma antes de publicar tag al registry interno.
-  development: 'https://procesador-de-pagos-dev.workers.dev',
+  development: "https://procesador-de-pagos-dev.workers.dev",
   // TODO: confirmar con plataforma antes de publicar tag al registry interno.
-  production: 'https://procesador-de-pagos.workers.dev',
+  production: "https://procesador-de-pagos.workers.dev",
 };
 ```
 
@@ -73,7 +73,7 @@ const URLS_POR_ENTORNO: Record<BuildEnv, string> = {
 
 ```bash
 pnpm build            # alias de `pnpm build:local` con tsdown (sin EVA_PAGOS_BUILD_ENV).
-pnpm build:local      # __SDK_API_URL__ = http://localhost:8787, env=local.
+pnpm build:local      # __SDK_API_URL__ = http://localhost:6000, env=local.
 pnpm build:dev        # __SDK_API_URL__ = URL development (placeholder), env=development.
 pnpm build:prod       # __SDK_API_URL__ = URL production (placeholder), env=production.
 
@@ -100,7 +100,7 @@ pnpm test:run -t 'crear-pago > caso éxito'        # por nombre
 `src/core/config.ts` lanza síncronicamente al cargar si:
 
 ```typescript
-__SDK_API_URL__.includes('localhost') && __SDK_BUILD_ENV__ !== 'local'
+__SDK_API_URL__.includes("localhost") && __SDK_BUILD_ENV__ !== "local";
 ```
 
 Esto es **última línea de defensa** contra publicar un build con `--ignore-scripts` (que bypassea `prepublishOnly`). Detecta el mismatch al primer `import` del módulo en runtime.
@@ -111,30 +111,30 @@ Esto es **última línea de defensa** contra publicar un build con `--ignore-scr
 
 El proyecto se estimó en **80-150 horas** desglosadas así:
 
-| Fase | Tareas | Horas |
-|---|---:|---|
-| Fase 0 — Verificación pre-implementación | 6 | 4-8h |
-| Fase 1 — Scaffolding | 7 | 5-10h |
-| Fase 2 — Core (triple AbortSignal + defensa runtime + 429 retryAfter) | 6 | 15-25h |
-| Fase 3 — Pagos (iterator + 2 schemas response distintos) | 11 | 20-35h |
-| Fase 4 — Webhooks (overload body + primitivas nativas + regex case-sensitive) | 6 | 10-20h |
-| Fase 5 — Entry points | 2 | 1-2h |
-| Fase 6 — Tests (~85-113 scenarios) | 16 | 15-30h |
-| Fase 7 — Docs | 8 | 10-15h |
-| Fase 8 — Gobernanza interna | 6 | 5-10h |
-| Fase 9 — Verificación local | 7 | 1-2h |
-| **Total** | **75** | **80-150h** |
+| Fase                                                                          | Tareas | Horas       |
+| ----------------------------------------------------------------------------- | -----: | ----------- |
+| Fase 0 — Verificación pre-implementación                                      |      6 | 4-8h        |
+| Fase 1 — Scaffolding                                                          |      7 | 5-10h       |
+| Fase 2 — Core (triple AbortSignal + defensa runtime + 429 retryAfter)         |      6 | 15-25h      |
+| Fase 3 — Pagos (iterator + 2 schemas response distintos)                      |     11 | 20-35h      |
+| Fase 4 — Webhooks (overload body + primitivas nativas + regex case-sensitive) |      6 | 10-20h      |
+| Fase 5 — Entry points                                                         |      2 | 1-2h        |
+| Fase 6 — Tests (~85-113 scenarios)                                            |     16 | 15-30h      |
+| Fase 7 — Docs                                                                 |      8 | 10-15h      |
+| Fase 8 — Gobernanza interna                                                   |      6 | 5-10h       |
+| Fase 9 — Verificación local                                                   |      7 | 1-2h        |
+| **Total**                                                                     | **75** | **80-150h** |
 
 ### Sub-batches del apply
 
 Para ejecutar de manera trackeable, el `sdd-apply` se dividió en 4 sub-batches:
 
-| Sub-batch | Fases | Tareas | Estado |
-|---|---|---:|---|
-| A | Fase 0 + Fase 1 | 13 | Completo |
-| B | Fase 2 + Fase 3 | 17 | Completo |
-| C | Fase 4 + Fase 5 + Fase 6 | 24 | Completo |
-| D | Fase 7 + Fase 8 + Fase 9 | 21 | Completo |
+| Sub-batch | Fases                    | Tareas | Estado   |
+| --------- | ------------------------ | -----: | -------- |
+| A         | Fase 0 + Fase 1          |     13 | Completo |
+| B         | Fase 2 + Fase 3          |     17 | Completo |
+| C         | Fase 4 + Fase 5 + Fase 6 |     24 | Completo |
+| D         | Fase 7 + Fase 8 + Fase 9 |     21 | Completo |
 
 Cada sub-batch persiste su progreso bajo el topic `sdd/bootstrap-mvp/apply-progress` en engram.
 
@@ -142,19 +142,19 @@ Cada sub-batch persiste su progreso bajo el topic `sdd/bootstrap-mvp/apply-progr
 
 ## 4. Configuración de runtime targets
 
-| Runtime | Versión mínima | Notas |
-|---|---|---|
-| Node | 18.0+ | `engines.node >= 18` en `package.json`. |
-| Cloudflare Workers | Compatibility 2023-08+ con flag `nodejs_compat` | `subtle.timingSafeEqual` disponible nativamente. |
-| Vercel Edge Runtime | Cualquier versión moderna | `subtle.timingSafeEqual` disponible. |
-| Browser | NO soportado | apiKey es secreta. |
+| Runtime             | Versión mínima                                  | Notas                                            |
+| ------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| Node                | 18.0+                                           | `engines.node >= 18` en `package.json`.          |
+| Cloudflare Workers  | Compatibility 2023-08+ con flag `nodejs_compat` | `subtle.timingSafeEqual` disponible nativamente. |
+| Vercel Edge Runtime | Cualquier versión moderna                       | `subtle.timingSafeEqual` disponible.             |
+| Browser             | NO soportado                                    | apiKey es secreta.                               |
 
 ### Cloudflare Workers — `wrangler.jsonc` mínimo
 
 ```jsonc
 {
   "compatibility_date": "2024-01-01",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
 }
 ```
 
