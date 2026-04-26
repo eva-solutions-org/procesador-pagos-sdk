@@ -8,7 +8,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
     vi.clearAllMocks();
   });
 
-  it('Given multi-page Then yields Pago directo (NO Resultado<Pago>) — C3', async () => {
+  it('Given multi-page Then yields PagoResumen directo (NO Resultado<PagoResumen>) — C3', async () => {
     const p1 = { ...PAGO_RESUMEN_FIXTURE, id: 'p1' };
     const p2 = { ...PAGO_RESUMEN_FIXTURE, id: 'p2' };
     const p3 = { ...PAGO_RESUMEN_FIXTURE, id: 'p3' };

@@ -1,7 +1,14 @@
 import type { ZodType } from 'zod';
 import { SDK_API_URL } from '../config.js';
 import type { Resultado } from '../types/result.js';
-import { mapearErrorHttp, mapearErrorParseo, mapearErrorRed } from './mapear-error.js';
+import {
+  mapearErrorAbortExterno,
+  mapearErrorHttp,
+  mapearErrorParseo,
+  mapearErrorRedirect,
+  mapearErrorRedTecnico,
+  mapearErrorTimeout,
+} from './mapear-error.js';
 
 /**
  * Opciones del factory `crearHttpClient`.
@@ -151,6 +158,7 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
       const init: RequestInit = {
         method,
         headers,
+        redirect: 'error',
         signal: combined,
       };
       if (tieneBody) {
@@ -162,14 +170,18 @@ export const crearHttpClient = (opciones: OpcionesHttpClient) => {
       if (esAbortError(err)) {
         // timeoutSignal disparó → interno → 503
         if (timeoutSignal.aborted) {
-          return mapearErrorRed(`Timeout (>${String(timeout)}ms)`);
+          return mapearErrorTimeout();
         }
         // Externo: Result falla 503 — el SDK siempre retorna Resultado (no throw)
-        return mapearErrorRed('Operación cancelada por signal externo');
+        return mapearErrorAbortExterno();
       }
+
+      if (err instanceof TypeError && /redirect/i.test(err.message)) {
+        return mapearErrorRedirect();
+      }
+
       // Network / DNS / TLS
-      const msg = err instanceof Error ? err.message : 'Error de red';
-      return mapearErrorRed(`Error de red: ${msg}`);
+      return mapearErrorRedTecnico();
     }
 
     // Response.ok lenient (A1) — cualquier 2xx

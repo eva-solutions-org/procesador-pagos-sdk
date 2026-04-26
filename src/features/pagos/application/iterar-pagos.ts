@@ -1,4 +1,4 @@
-import type { FiltrarPagoInput, PagoDetalle, PagoResumen } from '../domain/index.js';
+import type { FiltrarPagoInput, PagoResumen } from '../domain/index.js';
 import type { ListarPagosFn } from './listar-pagos.js';
 
 /**
@@ -33,7 +33,7 @@ export const iterarPagos =
   (
     filtros: Partial<FiltrarPagoInput> = {},
     options?: { signal?: AbortSignal },
-  ): AsyncGenerator<PagoResumen | PagoDetalle, void, unknown> => {
+    ): AsyncGenerator<PagoResumen, void, unknown> => {
     // I6 — Validación síncrona (NO dentro del async generator). De este modo el throw
     // se dispara al invocar `iterarPagos(...)` (incluso antes del primer `.next()`).
     // El consumidor obtiene un error sync inmediato si pasó un limit fuera de rango.
@@ -50,7 +50,7 @@ async function* iterarPagosImpl(
   filtros: Partial<FiltrarPagoInput>,
   options: { signal?: AbortSignal } | undefined,
   limit: number,
-): AsyncGenerator<PagoResumen | PagoDetalle, void, unknown> {
+): AsyncGenerator<PagoResumen, void, unknown> {
   let page = 1;
 
   try {

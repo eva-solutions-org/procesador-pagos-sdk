@@ -63,7 +63,7 @@ describe('listarPagos — REQ-PAGOS-003', () => {
     const r = await cliente.pagos.listarPagos({});
     if (!r.success) {
       expect(r.codigo).toBe(401);
-      expect(r.error).toBe('API key invalida');
+      expect(r.error).toBe('No autorizado');
     }
   });
 

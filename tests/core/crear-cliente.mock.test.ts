@@ -16,6 +16,14 @@ describe('crearCliente — REQ-CLIENTE-001/002/003', () => {
       expect(() => crearCliente({ apiKey: '' })).toThrow(/apiKey/);
     });
 
+    it('Given timeout negativo Then throw síncrono', () => {
+      expect(() => crearCliente({ apiKey: API_KEY_TEST, timeout: -1 })).toThrow(/timeout/);
+    });
+
+    it('Given timeout fuera de rango AbortSignal.timeout Then throw síncrono', () => {
+      expect(() => crearCliente({ apiKey: API_KEY_TEST, timeout: Number.MAX_SAFE_INTEGER + 1 })).toThrow(/timeout/);
+    });
+
     it('Given apiKey ausente Then throw síncrono', () => {
       expect(() => crearCliente({} as { apiKey: string })).toThrow(/apiKey/);
     });
@@ -103,7 +111,10 @@ describe('crearCliente — REQ-CLIENTE-001/002/003', () => {
         referenciaExterna: 'ref-1',
       });
       expect(r.success).toBe(false);
-      if (!r.success) expect(r.codigo).toBe(503);
+      if (!r.success) {
+        expect(r.codigo).toBe(503);
+        expect(r.error).toBe('Operación cancelada');
+      }
     });
 
     it('Given opSignal aborted Then operación falla 503 — Resultado (no throw) (I5)', async () => {
@@ -123,7 +134,10 @@ describe('crearCliente — REQ-CLIENTE-001/002/003', () => {
         { signal: ctrl.signal },
       );
       expect(r.success).toBe(false);
-      if (!r.success) expect(r.codigo).toBe(503);
+      if (!r.success) {
+        expect(r.codigo).toBe(503);
+        expect(r.error).toBe('Operación cancelada');
+      }
     });
 
     it('Given timeout corto Then dispara como interno → Resultado 503 (no throw)', async () => {
@@ -148,7 +162,10 @@ describe('crearCliente — REQ-CLIENTE-001/002/003', () => {
         referenciaExterna: 'ref-1',
       });
       expect(r.success).toBe(false);
-      if (!r.success) expect(r.codigo).toBe(503);
+      if (!r.success) {
+        expect(r.codigo).toBe(503);
+        expect(r.error).toBe('Tiempo de espera agotado');
+      }
     });
 
     it('Given clientSignal omitido Then signal interno solo combina opSignal + timeout (I5)', async () => {

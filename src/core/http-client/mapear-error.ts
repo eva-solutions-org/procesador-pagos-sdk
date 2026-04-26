@@ -7,7 +7,7 @@ import type { CodigoErrorHttp, Resultado } from '../types/result.js';
 const STATUS_VALIDOS = new Set<number>([400, 401, 403, 404, 409, 413, 422, 429, 500, 502, 503]);
 
 /**
- * Mensajes default por status. Sobrescritos por `body.error` si está disponible.
+ * Mensajes estables por status. No reflejan `body.error` del upstream.
  */
 const MENSAJES_POR_STATUS: Record<number, string> = {
   400: 'Petición inválida',
@@ -22,6 +22,11 @@ const MENSAJES_POR_STATUS: Record<number, string> = {
   502: 'Bad gateway upstream',
   503: 'Servicio no disponible',
 };
+
+const MENSAJE_ERROR_RED = 'Error de red al comunicarse con el servicio';
+const MENSAJE_ERROR_REDIRECT = 'Redirect inesperado rechazado por seguridad';
+const MENSAJE_ERROR_ABORT_EXTERNO = 'Operación cancelada';
+const MENSAJE_ERROR_TIMEOUT = 'Tiempo de espera agotado';
 
 /**
  * Parsea el header `Retry-After` (I2 — ADR-002).
@@ -58,21 +63,12 @@ export const parsearRetryAfter = (headerValue: string | null): number | undefine
 };
 
 /**
- * Extrae mensaje de error del body parseado, con fallback a default por status.
- *
- * NUNCA incluye apiKey ni headers crudos. NUNCA serializa el body completo.
+ * Retorna un mensaje estable por status.
  *
  * @internal
  */
-const extraerMensaje = (body: unknown, status: number): string => {
-  if (body !== null && typeof body === 'object' && 'error' in body) {
-    const err = (body as { error?: unknown }).error;
-    if (typeof err === 'string' && err.length > 0) {
-      return err;
-    }
-  }
-  return MENSAJES_POR_STATUS[status] ?? `Status HTTP inesperado: ${String(status)}`;
-};
+const extraerMensaje = (_body: unknown, status: number): string =>
+  MENSAJES_POR_STATUS[status] ?? `Status HTTP inesperado: ${String(status)}`;
 
 /**
  * Mapea `Response` HTTP no-OK → `Resultado<never>` con `codigo` + opcional `retryAfter` (I2).
@@ -112,9 +108,8 @@ export const mapearErrorHttp = (response: Response, body?: unknown): Resultado<n
 /**
  * Mapea error de red / DNS / TLS / abort interno → `Resultado<never>` (503).
  *
- * Si el abort fue EXTERNO (clientSignal o opSignal del consumidor), el caller
- * debe re-throw el `AbortError` (NO Resultado). Este helper solo cubre timeout
- * interno y errores técnicos.
+ * Este helper describe el contrato actual del SDK: ante estas fallas técnicas,
+ * el caller retorna `Resultado<never>` con código 503 en vez de relanzar.
  *
  * @internal
  */
@@ -123,6 +118,38 @@ export const mapearErrorRed = (mensaje: string): Resultado<never> => ({
   error: mensaje,
   codigo: 503,
 });
+
+/**
+ * Mensaje estable para errores técnicos de red. No expone detalles del runtime.
+ *
+ * @internal
+ */
+export const mapearErrorRedTecnico = (): Resultado<never> =>
+  mapearErrorRed(MENSAJE_ERROR_RED);
+
+/**
+ * Mensaje estable cuando fetch rechaza un redirect automático.
+ *
+ * @internal
+ */
+export const mapearErrorRedirect = (): Resultado<never> =>
+  mapearErrorRed(MENSAJE_ERROR_REDIRECT);
+
+/**
+ * Mensaje estable para abort externo iniciado por el consumidor.
+ *
+ * @internal
+ */
+export const mapearErrorAbortExterno = (): Resultado<never> =>
+  mapearErrorRed(MENSAJE_ERROR_ABORT_EXTERNO);
+
+/**
+ * Mensaje estable para timeout interno del SDK.
+ *
+ * @internal
+ */
+export const mapearErrorTimeout = (): Resultado<never> =>
+  mapearErrorRed(MENSAJE_ERROR_TIMEOUT);
 
 /**
  * Mapea error de parseo de body (JSON inválido) o `safeParse` Zod → 502.

@@ -25,6 +25,12 @@ export interface ClienteProcesadorPagos {
   readonly pagos: FacadePagos;
 }
 
+const TIMEOUT_MAXIMO = Number.MAX_SAFE_INTEGER;
+
+const esTimeoutValido = (timeout: number): boolean => {
+  return Number.isFinite(timeout) && timeout >= 0 && timeout <= TIMEOUT_MAXIMO;
+};
+
 /**
  * Factory principal del SDK. Retorna cliente con namespace `pagos`.
  *
@@ -43,9 +49,16 @@ export const crearCliente = (opciones: OpcionesCliente): ClienteProcesadorPagos 
     throw new Error('[procesador-pagos-sdk] apiKey es requerido y debe ser string no vacío');
   }
 
+  const timeout = opciones.timeout ?? 10_000;
+  if (typeof timeout !== 'number' || !esTimeoutValido(timeout)) {
+    throw new Error(
+      '[procesador-pagos-sdk] timeout debe estar entre 0 y Number.MAX_SAFE_INTEGER (ms)',
+    );
+  }
+
   const httpClient = crearHttpClient({
     apiKey: opciones.apiKey,
-    timeout: opciones.timeout ?? 10_000,
+    timeout,
     headersExtra: opciones.headers,
     fetchImpl: opciones.fetch ?? globalThis.fetch,
     clientSignal: opciones.signal,

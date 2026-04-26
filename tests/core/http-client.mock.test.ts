@@ -68,6 +68,18 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       expect((init.headers as Headers).get('content-type')).toBeNull();
     });
 
+    it('Given request HTTP Then fija redirect:error para bloquear redirects automáticos', async () => {
+      const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: true }));
+      const http = crearHttpClient({
+        apiKey: API_KEY_TEST,
+        timeout: 1000,
+        fetchImpl: fetchMock,
+      });
+      await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
+      const init = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+      expect(init.redirect).toBe('error');
+    });
+
     it('Given POST con body Then envía Content-Type: application/json', async () => {
       const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: true }));
       const http = crearHttpClient({
@@ -108,7 +120,27 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       expect(r.success).toBe(false);
-      if (!r.success) expect(r.codigo).toBe(503);
+      if (!r.success) {
+        expect(r.codigo).toBe(503);
+        expect(r.error).toBe('Error de red al comunicarse con el servicio');
+      }
+    });
+
+    it('Given redirect rejection del runtime Then 503 con mensaje saneado', async () => {
+      const fetchMock = vi.fn(async () => {
+        throw new TypeError('redirect mode is set to error: received redirect');
+      }) as unknown as typeof globalThis.fetch;
+      const http = crearHttpClient({
+        apiKey: API_KEY_TEST,
+        timeout: 1000,
+        fetchImpl: fetchMock,
+      });
+      const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        expect(r.codigo).toBe(503);
+        expect(r.error).toBe('Redirect inesperado rechazado por seguridad');
+      }
     });
 
     it('Given timeout (signal interno disparó) Then 503', async () => {
@@ -130,7 +162,33 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       expect(r.success).toBe(false);
-      if (!r.success) expect(r.codigo).toBe(503);
+      if (!r.success) {
+        expect(r.codigo).toBe(503);
+        expect(r.error).toBe('Tiempo de espera agotado');
+      }
+    });
+
+    it('Given abort externo Then 503 con mensaje estable', async () => {
+      const ctrl = new AbortController();
+      ctrl.abort();
+      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.signal?.aborted) {
+          throw new DOMException('aborted', 'AbortError');
+        }
+        return respuestaJsonData({ ok: true });
+      }) as unknown as typeof globalThis.fetch;
+
+      const http = crearHttpClient({
+        apiKey: API_KEY_TEST,
+        timeout: 1000,
+        fetchImpl: fetchMock,
+      });
+      const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple, signal: ctrl.signal });
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        expect(r.codigo).toBe(503);
+        expect(r.error).toBe('Operación cancelada');
+      }
     });
 
     it('Given JSON inválido Then 502', async () => {
@@ -159,13 +217,36 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       if (!r.success) expect(r.codigo).toBe(502);
     });
 
-    it('Given HTTP 400 Then codigo 400 con error del body', async () => {
-      const fetchMock = crearMockFetch(() => respuestaError(400, 'Petición inválida'));
+    it.each([
+      [400, 'Petición inválida'],
+      [401, 'No autorizado'],
+      [403, 'Acceso prohibido'],
+      [404, 'Recurso no encontrado'],
+      [409, 'Conflicto'],
+      [413, 'Payload demasiado grande'],
+      [422, 'Datos no procesables'],
+      [429, 'Demasiadas solicitudes'],
+      [500, 'Error interno del servicio'],
+      [502, 'Bad gateway upstream'],
+      [503, 'Servicio no disponible'],
+    ])('Given HTTP %i con body sensible Then usa mensaje genérico', async (status, defaultMsg) => {
+      const fetchMock = crearMockFetch(() =>
+        new Response(JSON.stringify({ error: 'apiKey pk_secret_xyz inválida; debug=stacktrace' }), {
+          status,
+          headers: {
+            'content-type': 'application/json',
+            ...(status === 429 ? { 'Retry-After': '30' } : {}),
+          },
+        }),
+      );
       const http = crearHttpClient({ apiKey: API_KEY_TEST, timeout: 1000, fetchImpl: fetchMock });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
+      expect(r.success).toBe(false);
       if (!r.success) {
-        expect(r.codigo).toBe(400);
-        expect(r.error).toBe('Petición inválida');
+        expect(r.codigo).toBe(status);
+        expect(r.error).toBe(defaultMsg);
+        expect(r.error).not.toContain('pk_secret_xyz');
+        expect(JSON.stringify(r)).not.toContain('pk_secret_xyz');
       }
     });
 
