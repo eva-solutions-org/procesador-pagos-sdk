@@ -11,3 +11,4 @@ Indice de gobernanza del SDK. Lee el doc correspondiente segun el caso:
 - **Seguridad (apiKey, HMAC, timing-safe)** → `docs/security.md`
 - **Configuracion y build** → `docs/configuration.md`
 - **Decisiones arquitectonicas (ADRs)** → `docs/decisions.md`
+- **Adapters pub/sub + SSE (v0.2)** → seccion "Adapters de pub/sub" de `docs/configuration.md` (skill `sdk-realtime`)
