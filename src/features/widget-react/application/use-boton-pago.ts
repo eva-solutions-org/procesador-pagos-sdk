@@ -20,7 +20,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Pago } from '../../pagos/domain/index.js';
+import type { Pago } from '../../pagos/index.js';
 import type {
   ApiRenderPropBoton,
   EstadoBoton,

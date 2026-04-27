@@ -3,7 +3,7 @@
  * y provee fallback automático a polling si SSE falla con 404.
  */
 
-import type { ModoPagos } from '../../rutas-hono/domain/index.js';
+import type { ModoPagos } from '../../rutas-hono/index.js';
 
 export interface RespuestaCrearPago {
   intentId: string;

@@ -1,6 +1,5 @@
 export {
   esEventoDuplicado,
-  _resetDedupCacheParaTests,
 } from "./dedup-eventos.js";
 export {
   HEARTBEAT_DEFAULT_MS,

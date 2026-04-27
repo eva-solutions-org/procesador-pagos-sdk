@@ -12,6 +12,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "#test-internals/sse-stream": fileURLToPath(
+        new URL("./src/features/sse-stream/test-internals.ts", import.meta.url),
+      ),
       "#test-internals/webhooks": fileURLToPath(
         new URL("./src/features/webhooks/test-internals.ts", import.meta.url),
       ),

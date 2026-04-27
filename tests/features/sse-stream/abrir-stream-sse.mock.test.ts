@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { _resetDedupCacheParaTests } from '#test-internals/sse-stream';
 import {
-  _resetDedupCacheParaTests,
   abrirStreamSSE,
   type MensajeSSE,
   type StreamSSE,

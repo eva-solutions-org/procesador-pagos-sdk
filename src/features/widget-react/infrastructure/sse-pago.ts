@@ -9,8 +9,8 @@
  *   para que el caller haga fallback a polling.
  */
 
-import type { EventoPago } from '../../pubsub/domain/index.js';
-import type { Pago } from '../../pagos/domain/index.js';
+import type { EventoPago } from '../../pubsub/index.js';
+import type { Pago } from '../../pagos/index.js';
 
 export interface OpcionesSse {
   pagoId: string;

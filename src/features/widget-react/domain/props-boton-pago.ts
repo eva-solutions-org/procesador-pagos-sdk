@@ -8,7 +8,7 @@
  */
 
 import type { CSSProperties, ReactNode } from 'react';
-import type { Pago } from '../../pagos/domain/index.js';
+import type { Pago } from '../../pagos/index.js';
 import type { EstadoBoton } from './estados-boton.js';
 
 export interface ApiRenderPropBoton {

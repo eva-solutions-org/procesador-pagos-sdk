@@ -9,7 +9,7 @@
  * Clamp del intervalo: [500, 30000] ms.
  */
 
-import type { Pago } from '../../pagos/domain/index.js';
+import type { Pago } from '../../pagos/index.js';
 
 const ESTADOS_TERMINALES: ReadonlyArray<string> = [
   'completado',

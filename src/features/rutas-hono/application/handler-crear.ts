@@ -11,7 +11,7 @@
  */
 
 import type { Context } from 'hono';
-import { crearPagoInputSchema } from '../../pagos/domain/index.js';
+import { crearPagoInputSchema } from '../../pagos/index.js';
 import type { CrearPagoResponseCliente } from '../domain/crear-response.js';
 import type { AmbienteRutasPagos } from '../domain/contexto-rutas.js';
 

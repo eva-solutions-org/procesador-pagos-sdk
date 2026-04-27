@@ -5,7 +5,7 @@
  * a su transición. TS strict prohíbe acceder a campos de otra fase.
  */
 
-import type { Pago } from '../../pagos/domain/index.js';
+import type { Pago } from '../../pagos/index.js';
 
 export type EstadoBoton =
   | { fase: 'inicial' }

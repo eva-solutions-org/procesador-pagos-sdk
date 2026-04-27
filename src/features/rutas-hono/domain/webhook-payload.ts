@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { ESTADOS_PAGO } from '../../pagos/domain/index.js';
+import { ESTADOS_PAGO } from '../../pagos/index.js';
 
 /** 9 campos del payload del webhook. */
 export const webhookPayloadSchema = z.object({

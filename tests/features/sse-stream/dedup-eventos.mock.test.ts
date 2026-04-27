@@ -3,8 +3,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { _resetDedupCacheParaTests } from '#test-internals/sse-stream';
 import {
-  _resetDedupCacheParaTests,
   esEventoDuplicado,
 } from "../../../src/features/sse-stream/index.js";
 

@@ -32,7 +32,7 @@ import {
   type PubSubAdapterDurableObjects,
 } from '../../pubsub/index.js';
 import type { AmbienteRutasPagos } from '../domain/contexto-rutas.js';
-import type { Pago } from '../../pagos/domain/index.js';
+import type { Pago } from '../../pagos/index.js';
 
 /**
  * Construye un `EventoPago` snapshot desde un `Pago` completo (22 campos).

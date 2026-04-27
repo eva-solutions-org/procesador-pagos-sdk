@@ -42,23 +42,6 @@ interface SuscriptorLive {
 }
 
 /**
- * Serializa un evento al formato SSE estándar.
- *
- * Formato:
- *   id: <eventId>
- *   event: pago.actualizado
- *   data: <json del evento>
- *   <línea vacía>
- */
-function serializarSSE(evento: EventoPago): string {
-  return (
-    `id: ${evento.eventId}\n` +
-    `event: pago.actualizado\n` +
-    `data: ${JSON.stringify(evento)}\n\n`
-  );
-}
-
-/**
  * Serializa un evento al formato NDJSON (sub-protocolo interno entre
  * adapter-durable-objects y el DO). Cada evento ocupa una línea JSON.
  */
@@ -298,4 +281,3 @@ export class SSEHub {
  * (con `event:` y `id:`) — usado por handlers que envían directo al
  * cliente browser, no por el sub-protocolo NDJSON interno del DO.
  */
-export { serializarSSE };

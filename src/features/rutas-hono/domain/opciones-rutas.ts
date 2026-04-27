@@ -8,8 +8,8 @@
  */
 
 import type { Context } from 'hono';
-import type { CrearPagoInput, Pago } from '../../pagos/domain/index.js';
-import type { PubSubAdapter } from '../../pubsub/domain/index.js';
+import type { CrearPagoInput, Pago } from '../../pagos/index.js';
+import type { PubSubAdapter } from '../../pubsub/index.js';
 
 export interface RutasPagosOpciones {
   /** API key del servicio Procesador-de-pagos. NUNCA logueada. */
