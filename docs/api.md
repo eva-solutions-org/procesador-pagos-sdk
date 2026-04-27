@@ -461,3 +461,122 @@ type MetodoPago = typeof METODOS_PAGO[number];
 ```
 
 > Si el servicio agrega un método (e.g. `'card'`), regenerar `pago-types.ts` y bumpear minor del SDK.
+
+---
+
+## 10. Entry `@eva/procesador-pagos-sdk/hono` — `rutasPagos()` (v0.2)
+
+### Firma
+
+```typescript
+import { rutasPagos, crearRutasPagos } from "@eva/procesador-pagos-sdk/hono";
+
+function rutasPagos<Env extends object = object>(
+  args: RutasPagosOpciones | ((env: Env) => RutasPagosOpciones | Promise<RutasPagosOpciones>),
+): Hono<{ Bindings: Env; Variables: VariablesRutasPagos }>;
+```
+
+### Opciones (`RutasPagosOpciones`)
+
+| Campo | Tipo | Required | Descripción |
+|---|---|---|---|
+| `apiKey` | `string` | sí | API key del servicio Procesador-de-pagos. NUNCA logueada. |
+| `webhookSecret` | `string` | sí | Secret HMAC para verificar webhooks. |
+| **`alCrearPago`** | `(input, c) => CrearPagoInput \| Promise<CrearPagoInput>` | **sí** | **OBLIGATORIO (S1.1).** Recalcula monto canónico desde la BD del consumidor. Throw síncrono al construir el factory si ausente. |
+| `pubsub?` | `PubSubAdapter` | no | Si presente, registra el endpoint `GET /:id/eventos` (SSE). Sino → 404. |
+| `verificarAcceso?` | `(c, pagoId) => boolean \| Promise<boolean>` | no | Auth del endpoint SSE. Si pubsub presente y verificarAcceso ausente → `console.warn`. |
+| `alConfirmar?`, `alFallar?`, `alReembolsar?`, `alWebhookRecibido?`, `alAntesDeResponderPolling?` | `(pago: Pago) => void \| Promise<void>` | no | Hooks awaitables. |
+| `onPublishError?`, `onSubscribeError?` | `(err: unknown) => void` | no | Callbacks de error en pubsub. |
+| `heartbeatMs?` | `number` | no | Custom heartbeat. Clamp `[10000, 60000]`. Default `30000`. |
+
+### Endpoints registrados
+
+| Método | Path | Descripción |
+|---|---|---|
+| `POST` | `/crear` | Crea pago. Body: `CrearPagoInput`. Response: `{ intentId, pagoId, modo, basePath }`. |
+| `POST` | `/webhook` | Verifica HMAC, dedup eventId, invoca hooks de negocio. Response: `{ ok: true }` o `{ ok: true, deduped: true }`. |
+| `GET` | `/:id` | Consulta polling. Si `verificarAcceso` está, valida; sino 401. |
+| `GET` | `/:id/eventos` | SSE. Solo si `pubsub` configurado, sino 404. |
+
+### Ejemplos
+
+```typescript
+// Args literal (Node)
+const app = new Hono();
+app.route("/pagos", rutasPagos({
+  apiKey: process.env.API_KEY!,
+  webhookSecret: process.env.WEBHOOK_SECRET!,
+  alCrearPago: async (input, c) => {
+    const producto = await db.productos.findById(input.metadata.productoId);
+    return { ...input, monto: producto.precio.toFixed(2), moneda: producto.moneda };
+  },
+  pubsub: adapterMemoria(),
+  verificarAcceso: (c, pagoId) => verifySession(c, pagoId),
+}));
+
+// Args lazy (CF Workers — secrets en env)
+app.route("/pagos", rutasPagos<Env>((env) => ({
+  apiKey: env.API_KEY,
+  webhookSecret: env.WEBHOOK_SECRET,
+  alCrearPago: async (input) => input,
+  pubsub: adapterDurableObjects({ binding: env.SSE_HUB }),
+})));
+```
+
+> Alias dual: `crearRutasPagos === rutasPagos` (UX-2).
+
+---
+
+## 11. Entry `@eva/procesador-pagos-sdk/react` — `<BotonPago>` y `useBotonPago` (v0.2)
+
+### Componente `<BotonPago>` (`PropsBotonPago`)
+
+| Prop | Tipo | Required | Notas |
+|---|---|---|---|
+| `monto` | `string` | sí | **DISPLAY ONLY**. Backend recalcula desde BD. |
+| `moneda` | `string` | sí | **DISPLAY ONLY** (ISO 4217). |
+| `referenciaExterna` | `string` | sí | Único por proyecto (anti-replay). |
+| `metadata?` | `Record<string, unknown>` | no | Identificadores `productoId`, `cantidad`, `cuponCodigo` que el backend usa en `alCrearPago`. |
+| `widgetId?` | `string` | no | Sino lee de `VITE_PROMETEO_WIDGET_ID` o `NEXT_PUBLIC_PROMETEO_WIDGET_ID`. |
+| `basePath?` | `string` | no | Default `/`. |
+| `intervaloMs?` | `number` | no | Polling clamp `[500, 30000]`. Default `2000`. |
+| `timeoutMs?` | `number` | no | Default `60000`. |
+| `style?` / `styles?` / `className?` / `children?` | varios | no | Customización. `className` desactiva inline base. `children` (render-prop) toma control total. |
+| `textoBoton?`, `textoCreando?`, `textoProcesando?`, `textoTimeoutSuave?`, `textoReintentar?` | `string` | no | Textos UX. |
+| `onCompletado?(pago)`, `onFallido?(err)`, `onTimeoutSuave?(pago)`, `onCancelado?()` | callbacks | no | |
+
+### Hook `useBotonPago(opciones)` → `ApiRenderPropBoton`
+
+```typescript
+type OpcionesUseBotonPago = Omit<PropsBotonPago, "style" | "styles" | "className" | "children">;
+
+interface ApiRenderPropBoton {
+  iniciar: () => Promise<void>;
+  cerrar: () => void;
+  estado: EstadoBoton;       // discriminated union 6 fases
+  error: string | null;
+  pago: Pago | null;
+  intentId: string | null;
+}
+```
+
+### Estados (`EstadoBoton`)
+
+```
+inicial → creando → pagando → procesando → completado | fallido
+                          ↓
+                       inicial (CLOSE)
+```
+
+### Ejemplo render-prop
+
+```tsx
+<BotonPago monto="100.00" moneda="USD" referenciaExterna="orden-1" metadata={{ productoId: 7 }}>
+  {({ iniciar, estado, error }) => (
+    <button onClick={iniciar} disabled={estado.fase !== "inicial"}>
+      {error ? "Reintentar" : "Pagar"}
+    </button>
+  )}
+</BotonPago>
+```
+

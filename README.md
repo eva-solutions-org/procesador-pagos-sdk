@@ -15,7 +15,7 @@ SDK TypeScript para consumir el servicio Procesador-de-pagos. Diseñado para ser
 
 **No browser** — la `apiKey` es secreta y debe estar en el servidor.
 
-**Versión actual:** `0.1.0` (initial release) | **Testeado contra:** `380874771a21b56bd42f1db23c60627c62209327`
+**Versión actual:** `0.2.0` | **Testeado contra:** `380874771a21b56bd42f1db23c60627c62209327`
 
 ### 🗺️ Mapa rápido
 
@@ -61,6 +61,116 @@ if (!resultado.success) {
 
 console.log("Pago creado:", resultado.data.pagoId);
 ```
+
+---
+
+## 🔒 Seguridad obligatoria (full-stack checkout v0.2)
+
+> Si usás el entry `@eva/procesador-pagos-sdk/hono` (helper `rutasPagos()`), el SDK te fuerza a implementar el hook `alCrearPago` con un **throw síncrono al construir el factory**. Si lo olvidás, tu servicio no arranca.
+
+**Razón**: el frontend (`<BotonPago>`) no es trusted. Cualquier valor que viaja desde el browser (`monto`, `moneda`, `metadata`) puede ser manipulado desde devtools. El servidor del consumidor debe recalcular el monto canónico desde su BD usando un identificador confiable (típicamente `metadata.productoId`).
+
+### Lo que ves si olvidás `alCrearPago`
+
+```
+Error: [procesador-pagos-sdk] alCrearPago es OBLIGATORIO para evitar que un atacante manipule monto/moneda desde el frontend. Implementá el hook con lookup en tu BD para recalcular monto canónico. Ver docs/security.md.
+```
+
+### Snippet del patrón seguro
+
+```typescript
+import { rutasPagos } from "@eva/procesador-pagos-sdk/hono";
+
+app.route(
+  "/pagos",
+  rutasPagos({
+    apiKey: process.env.PROCESADOR_API_KEY!,
+    webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
+    alCrearPago: async (input, c) => {
+      const producto = await db.productos.findById(input.metadata.productoId);
+      if (!producto) throw new Error("Producto no encontrado");
+      return {
+        ...input,
+        monto: (producto.precio / 100).toFixed(2),
+        moneda: producto.moneda,
+      };
+    },
+  }),
+);
+```
+
+### Caso "no necesito validación" (escape hatch documentado)
+
+```typescript
+// Solo aceptable si el monto ya viene controlado por backend (raro):
+alCrearPago: (input) => input;
+```
+
+> Esto es declaración explícita de intención. Code review verá `(input) => input` y preguntará. **NO usar en producción** si el monto viene de fuente no confiable.
+
+Ver [docs/security.md](./docs/security.md) para el threat model completo, ejemplo INSEGURO vs SEGURO, tabla de manipulaciones y checklist pre-deploy. Ver [ADR-020](./docs/decisions.md) para el security boundary y responsabilidades SDK vs consumidor.
+
+---
+
+## ⚡ Quickstart full-stack (Hono + React)
+
+Para el flujo completo (botón en frontend → checkout en backend → SSE/polling de eventos), el SDK expone 4 entries opt-in:
+
+```typescript
+// Backend Node — opciones literales
+import { Hono } from "hono";
+import { rutasPagos, adapterMemoria } from "@eva/procesador-pagos-sdk/hono";
+
+const app = new Hono();
+app.route(
+  "/pagos",
+  rutasPagos({
+    apiKey: process.env.PROCESADOR_API_KEY!,
+    webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
+    alCrearPago: async (input) => input, // implementá tu lookup acá
+    pubsub: adapterMemoria(),
+  }),
+);
+```
+
+```typescript
+// Backend Cloudflare Workers — opciones lazy `(env) => opciones`
+import { rutasPagos } from "@eva/procesador-pagos-sdk/hono";
+import { adapterDurableObjects, SSEHub } from "@eva/procesador-pagos-sdk/hono/durable-objects";
+
+export { SSEHub };
+
+const app = new Hono<{ Bindings: { SSE_HUB: DurableObjectNamespace; API_KEY: string; WEBHOOK_SECRET: string } }>();
+app.route(
+  "/pagos",
+  rutasPagos((env) => ({
+    apiKey: env.API_KEY,
+    webhookSecret: env.WEBHOOK_SECRET,
+    alCrearPago: async (input) => input,
+    pubsub: adapterDurableObjects({ binding: env.SSE_HUB }),
+  })),
+);
+```
+
+```tsx
+// Frontend React
+import { BotonPago } from "@eva/procesador-pagos-sdk/react";
+
+export function Checkout() {
+  return (
+    <BotonPago
+      monto="100.00"
+      moneda="USD"
+      referenciaExterna="orden-42"
+      metadata={{ productoId: 7 }}
+      widgetId={import.meta.env.VITE_PROMETEO_WIDGET_ID}
+      onCompletado={(pago) => console.log("OK", pago)}
+    />
+  );
+}
+```
+
+Ver [docs/api.md](./docs/api.md), [docs/configuration.md](./docs/configuration.md) y [docs/architecture.md](./docs/architecture.md) para el detalle.
 
 ---
 
@@ -331,7 +441,7 @@ Defensa runtime (ADR-007 / C5): si el bundle final apunta a `localhost` pero `__
 | `docs/api.md`           | Referencia completa de la API pública.                                  |
 | `docs/configuration.md` | Setup consumidor + contribuidor, build-per-env.                         |
 | `docs/conventions.md`   | Naming, paradigma funcional, Result Pattern, imports.                   |
-| `docs/decisions.md`     | 8 ADRs (ADR-001 a ADR-008).                                             |
+| `docs/decisions.md`     | 20 ADRs (ADR-001 a ADR-020).                                            |
 | `docs/security.md`      | Modelo de amenazas, política `apiKey nunca en error`, HMAC fail-closed. |
 | `CHANGELOG.md`          | SemVer + Conventional Commits.                                          |
 

@@ -37,7 +37,123 @@ El SDK opera como **cliente backend-to-backend** que:
 
 ---
 
-## 2. Política `apiKey` nunca en errors
+## 2. Validación server-side OBLIGATORIA (alCrearPago)
+
+> **Esta sección es de cumplimiento obligatorio si usás `rutasPagos()` (entry `@eva/procesador-pagos-sdk/hono`).** El SDK fuerza la presencia del hook `alCrearPago` con un `throw` síncrono al construir el factory — si lo olvidás, tu servicio no arranca.
+
+### 2.1 Por qué es obligatorio
+
+El frontend NO es trusted. Cualquier valor que viaja desde `<BotonPago>` (`monto`, `moneda`, `referenciaExterna`, `metadata`) puede ser manipulado por un atacante con devtools del browser. El servidor del consumidor MUST recalcular el monto canónico desde su BD usando un identificador confiable (típicamente `metadata.productoId`).
+
+```
+Browser (UNTRUSTED) ──► Backend del consumidor ──► SDK (rutasPagos) ──► Procesador-de-pagos
+   $ devtools edit         alCrearPago hook         crearPago client       crear-pago service
+   monto = 0.01            recalcula desde BD       envía monto canónico
+```
+
+### 2.2 Ejemplo INSEGURO
+
+```typescript
+// Manipulación del atacante:
+// 1. Abre devtools en el browser.
+// 2. Edita el request POST /pagos/crear y cambia monto: '0.01'.
+// 3. Backend lo pasa al servicio Procesador-de-pagos sin recalcular.
+// 4. Atacante paga 1 centavo por un producto de 10 soles.
+//
+// El SDK previene esto con throw obligatorio — esta sección documenta el por qué.
+
+// ❌ INSEGURO — sin alCrearPago, el SDK throwea al construir el factory:
+app.route('/pagos', rutasPagos({
+  apiKey: process.env.PROCESADOR_API_KEY!,
+  webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
+  // ⚠️ falta alCrearPago → throw síncrono al boot:
+  //   "[procesador-pagos-sdk] alCrearPago es OBLIGATORIO ..."
+}));
+```
+
+### 2.3 Ejemplo SEGURO
+
+```typescript
+// ✅ SEGURO — alCrearPago recalcula desde la BD del consumidor:
+app.route('/pagos', rutasPagos({
+  apiKey: process.env.PROCESADOR_API_KEY!,
+  webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
+  alCrearPago: async (input, c) => {
+    // 1. Frontend manda metadata.productoId — confiable como identificador.
+    const producto = await db.productos.findById(input.metadata.productoId);
+    if (!producto) throw new Error('Producto no encontrado');
+
+    // 2. Calcular monto canónico desde la BD.
+    let montoCentavos = producto.precio;
+
+    // 3. Aplicar cupón si viene (validar primero).
+    if (input.metadata.cuponCodigo) {
+      const cupon = await db.cupones.findValid(input.metadata.cuponCodigo);
+      if (cupon) montoCentavos = aplicarCupon(montoCentavos, cupon);
+    }
+
+    // 4. Aplicar cantidad si viene.
+    if (input.metadata.cantidad) {
+      montoCentavos *= Number(input.metadata.cantidad);
+    }
+
+    // 5. Verificar ownership (¿el usuario puede comprar este producto?).
+    const userId = c.get('userId');
+    await verificarOwnership(userId, producto);
+
+    return {
+      ...input,
+      monto: (montoCentavos / 100).toFixed(2),
+      moneda: producto.moneda,
+    };
+  },
+}));
+```
+
+### 2.4 Tabla de manipulaciones del atacante
+
+| Amenaza | Vector | Mitigación |
+|---|---|---|
+| Cambia `monto` a `0.01` | Devtools edita request | `alCrearPago` recalcula desde `metadata.productoId` |
+| Cambia `moneda` a `USD` (era `PEN`) | Devtools edita request | `alCrearPago` recalcula desde producto |
+| Cambia `metadata.productoId` a uno más caro | Devtools edita request | Ownership check + auth de session |
+| Cambia `metadata.cantidad` a `0` | Devtools edita request | Validar `cantidad >= 1` y `<= maxStock` en el hook |
+| Aplica cupón inválido | Devtools edita metadata | Validar cupón contra BD antes de aplicar |
+| Reusa `referenciaExterna` | Reenvío del mismo body | Servicio retorna 409 (anti-replay del Procesador) |
+| Spoofea webhook con monto falso | POST sin firma válida | HMAC SHA-256 + timing-safe comparison + dedup eventId |
+
+### 2.5 Cuándo NO usar identity `(input) => input`
+
+**Nunca en producción real con montos no controlados por backend.** Casos donde podría aceptarse identity:
+
+- Monto fijo definido por el backend antes del frontend (ej: suscripción mensual de USD 9.99 con `metadata.planId` y precio hardcoded server-side). **Aún así: validar `metadata.planId` y derivar el monto de una tabla server-side, NO copiar el del request.**
+
+Si pasás identity, marcá el código con un `TODO` o documentá la decisión en code review. El SDK NO bloquea la identity — es declaración explícita de intención. Code reviewers que vean `alCrearPago: (input) => input` deben preguntar el porqué.
+
+### 2.6 Checklist pre-deploy
+
+- [ ] ¿Implementé `alCrearPago` con lookup real (no identity)?
+- [ ] ¿Valido `metadata.productoId` (existe + ownership)?
+- [ ] ¿Valido cupones contra BD antes de aplicar?
+- [ ] ¿Valido `metadata.cantidad >= 1` y `<= maxStock`?
+- [ ] ¿Recalculo `moneda` desde producto, NO copio del request?
+- [ ] ¿Hago validación de `userId` ownership (auth de cookie/JWT)?
+- [ ] ¿Tengo tests de integración con monto manipulado en frontend mock?
+- [ ] ¿Configuré `verificarAcceso` para `/eventos` SSE? (si SSE habilitado)
+- [ ] ¿El `webhookSecret` está en secret manager (no en código)?
+- [ ] ¿Verifiqué el throw del SDK localmente al olvidar `alCrearPago`?
+
+### 2.7 Mensaje exacto del throw
+
+```
+Error: [procesador-pagos-sdk] alCrearPago es OBLIGATORIO para evitar que un atacante manipule monto/moneda desde el frontend. Implementá el hook con lookup en tu BD para recalcular monto canónico. Ver docs/security.md.
+```
+
+Ver `ADR-020 — Security boundary` en `docs/decisions.md` para el threat model completo y las responsabilidades del SDK vs el consumidor.
+
+---
+
+## 3. Política `apiKey` nunca en errors
 
 **Regla dura**: la `apiKey` NO debe aparecer en NINGUNA superficie observable por el consumidor (excepto el header `x-api-key` que va al servicio).
 
@@ -62,7 +178,7 @@ El SDK opera como **cliente backend-to-backend** que:
 
 ---
 
-## 3. HMAC verification: timing-safe + fail-closed
+## 4. HMAC verification: timing-safe + fail-closed
 
 ### Algoritmo
 
@@ -99,7 +215,7 @@ Rotación: el consumidor debe rotar la `secretKey` periódicamente (cuatrimestra
 
 ---
 
-## 4. Triple `AbortSignal` y prevención de leaks
+## 5. Triple `AbortSignal` y prevención de leaks
 
 ### Combinación
 
@@ -127,7 +243,7 @@ Si el consumidor olvida cancelar, el timeout interno (siempre presente) actúa c
 
 ---
 
-## 5. Build-per-env: imposibilidad de URL change runtime
+## 6. Build-per-env: imposibilidad de URL change runtime
 
 ### Atque mitigado: MitM via env manipulation
 
@@ -159,7 +275,7 @@ Limitación: NO cubre URLs no-localhost incorrectas (e.g. SDK con URL dev pero e
 
 ---
 
-## 6. Recomendaciones para el consumidor
+## 7. Recomendaciones para el consumidor
 
 ### Configuración mínima
 
@@ -218,6 +334,14 @@ El servicio puede reenviar webhooks (network failures, etc.). Tu handler debe se
 
 ---
 
-## 7. Reportar vulnerabilidades
+## 8. Sanitización SSE (CR/LF) y endpoint `/eventos`
+
+El endpoint `GET /:id/eventos` (SSE) emite campos de control (`event:`, `id:`, `retry:`) cuyos valores podrían venir contaminados con CR/LF. El SDK aplica `sanitizarCampoSSE(valor)` que rechaza con throw si detecta `\r` o `\n` (defensa adicional al fix del CVE-2026-29085 de Hono <4.12.4 — el peer dep ya está bumpeado a `>=4.12.4`).
+
+Auth del endpoint: pasar `verificarAcceso?: (c, pagoId) => boolean | Promise<boolean>` al factory. Si `pubsub` está configurado y `verificarAcceso` no lo está, el SDK emite un `console.warn` advirtiendo que el endpoint queda público (FIX I2 / ADR-019).
+
+---
+
+## 9. Reportar vulnerabilidades
 
 (Política interna del ecosistema `@eva/*` — completar con canal de seguridad oficial cuando esté establecido).

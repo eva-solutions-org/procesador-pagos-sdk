@@ -2,6 +2,36 @@
 
 Todas las versiones siguen [SemVer](https://semver.org/) y los mensajes de commit siguen [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.0] — 2026-04-25
+
+### Added (full-stack-checkout)
+
+- **Entry `@eva/procesador-pagos-sdk/hono`** — factory `rutasPagos()` (alias `crearRutasPagos`) que monta los 4 endpoints `POST /crear`, `POST /webhook`, `GET /:id`, `GET /:id/eventos`. Acepta opciones literales o función lazy `(env) => opciones`.
+- **Entry `@eva/procesador-pagos-sdk/hono/upstash`** — adapter pub/sub Upstash Redis (peer dep optional `@upstash/redis>=1.0.0`).
+- **Entry `@eva/procesador-pagos-sdk/hono/durable-objects`** — adapter Cloudflare Durable Objects + clase `SSEHub` con replay buffer FIFO 20 + TTL 5 min (REQ-PUBSUB-006).
+- **Entry `@eva/procesador-pagos-sdk/react`** — componente `<BotonPago>` + hook `useBotonPago()` con state machine de 6 fases, AbortController StrictMode-tolerante (FIX M1), customización via `style`/`styles`/`className`/render-prop `children` (FIX C3).
+- **Feature `pubsub`** — interface `PubSubAdapter` + 3 adapters (memoria, Upstash, DO) + `calcularEventId(...)` SHA-256.
+- **Feature `sse-stream`** — `abrirStreamSSE(...)` con snapshot inicial + heartbeat clamp [10s, 60s] + dedup por eventId TTL 5 min + `sanitizarCampoSSE(...)` (defensa CR/LF — FIX C1) + `await onAbort` (FIX I3).
+- **Hooks de negocio** — `alConfirmar`, `alFallar`, `alReembolsar`, `alWebhookRecibido`, `alAntesDeResponderPolling`. Estrategia mixta: hooks `await`, publish fire-and-forget con `c.executionCtx?.waitUntil(...)` (CF Workers) o fallback `void`.
+- **`verificarAcceso?`** opcional con `console.warn` si SSE configurado sin auth (FIX I2 / ADR-019).
+- **Hono `>=4.12.4`** como peer dep (mitigación CVE-2026-29085).
+
+### Security (S1 — bloqueante)
+
+- **`alCrearPago` ahora REQUIRED** en TypeScript (`alCrearPago: ...` sin `?:`). El factory `rutasPagos()` throwea **síncronamente** al construir si está ausente o no es función. Aplica SIEMPRE, en cualquier `EVA_PAGOS_BUILD_ENV`. Razón: prevenir manipulación de `monto`/`moneda` desde devtools del frontend (REQ-RUTAS-008 / ADR-020).
+- **JSDoc destacado `**DISPLAY ONLY**`** en props `monto` y `moneda` de `<BotonPago>` (REQ-WIDGET-014 / S1.2).
+- **`docs/security.md` §2** — sección obligatoria "Validación server-side OBLIGATORIA" con ejemplo INSEGURO/SEGURO + tabla de manipulaciones + checklist pre-deploy + cuándo NO usar identity (REQ-DOCS-001 / S1.3).
+- **ADR-020** — Security boundary completo en `docs/decisions.md` con responsabilidades SDK vs consumidor + threat model (S1.4).
+- **README sección "Seguridad obligatoria"** después del quickstart con throw + snippet seguro + link a `docs/security.md` (REQ-DOCS-002 / S1.5).
+- **BREAKING en TypeScript strict**: consumidores que llamaban `rutasPagos({ apiKey, webhookSecret })` sin `alCrearPago` reciben TS error + runtime throw. Migración: `alCrearPago: (input) => input` (identity, declaración explícita) o implementar el lookup en BD (recomendado).
+
+### Verified against
+
+- Servicio Procesador-de-pagos commit `380874771a21b56bd42f1db23c60627c62209327`.
+- Hono `^4.12.15` (>=4.12.4 requerido por security CVE).
+- React `^19.2.5` (peer dep optional).
+- Auditoría 1 abogado-del-diablo cerrada con 10 fixes (C1-C4 + I1-I3 + M1-M3) + Fix S1 (5 sub-fixes Security).
+
 ## [0.1.0] — 2026-04-25
 
 ### Added (initial release)

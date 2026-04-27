@@ -159,3 +159,94 @@ Cada sub-batch persiste su progreso bajo el topic `sdd/bootstrap-mvp/apply-progr
 ```
 
 El flag `nodejs_compat` se usa solo si la primitiva `subtle.timingSafeEqual` no está disponible (raro en runtimes recientes). Aun sin ella, el SDK falla cerrado con error explícito (ver `docs/security.md`).
+
+---
+
+## Adapters de pub/sub (full-stack-checkout v0.2)
+
+### Matriz de selección
+
+| Adapter | Runtime | Multi-instance | Replay | Setup | Uso recomendado |
+|---|---|---|---|---|---|
+| `adapterMemoria()` | Node, Workers | NO | NO | zero | Dev, demos, single-process. |
+| `adapterUpstash({ url, token })` | Node, Workers, Edge | SI | parcial | Upstash REST credentials | Multi-instance simple. Free tier OK. |
+| `adapterDurableObjects({ binding })` | Cloudflare Workers | SI | SI FIFO 20 + TTL 5min | DO class binding en wrangler | Producción CF Workers. |
+
+### Setup `adapterMemoria()`
+
+```typescript
+import { rutasPagos, adapterMemoria } from "@eva/procesador-pagos-sdk/hono";
+
+app.route("/pagos", rutasPagos({
+  apiKey: process.env.API_KEY!,
+  webhookSecret: process.env.WEBHOOK_SECRET!,
+  alCrearPago: async (input) => input,
+  pubsub: adapterMemoria(),
+}));
+```
+
+Limitaciones: si tenés N réplicas, cada una tiene su propio `Map`. Webhook llega a réplica A, cliente SSE conectado a réplica B → no recibe el evento.
+
+### Setup `adapterUpstash()`
+
+```typescript
+import { rutasPagos } from "@eva/procesador-pagos-sdk/hono";
+import { adapterUpstash } from "@eva/procesador-pagos-sdk/hono/upstash";
+
+app.route("/pagos", rutasPagos({
+  apiKey: process.env.API_KEY!,
+  webhookSecret: process.env.WEBHOOK_SECRET!,
+  alCrearPago: async (input) => input,
+  pubsub: adapterUpstash({
+    url: process.env.UPSTASH_REDIS_REST_URL!,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+  }),
+}));
+```
+
+Peer dep optional `@upstash/redis>=1.0.0` — instalar con `pnpm add @upstash/redis`.
+
+### Setup `adapterDurableObjects()`
+
+`wrangler.jsonc`:
+
+```jsonc
+{
+  "durable_objects": {
+    "bindings": [
+      { "name": "SSE_HUB", "class_name": "SSEHub" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SSEHub"] }
+  ]
+}
+```
+
+`src/worker.ts`:
+
+```typescript
+import { Hono } from "hono";
+import { rutasPagos } from "@eva/procesador-pagos-sdk/hono";
+import { adapterDurableObjects, SSEHub } from "@eva/procesador-pagos-sdk/hono/durable-objects";
+
+export { SSEHub };
+
+interface Env {
+  API_KEY: string;
+  WEBHOOK_SECRET: string;
+  SSE_HUB: DurableObjectNamespace;
+}
+
+const app = new Hono<{ Bindings: Env }>();
+app.route("/pagos", rutasPagos<Env>((env) => ({
+  apiKey: env.API_KEY,
+  webhookSecret: env.WEBHOOK_SECRET,
+  alCrearPago: async (input) => input,
+  pubsub: adapterDurableObjects({ binding: env.SSE_HUB }),
+})));
+
+export default app;
+```
+
+Ventajas: replay buffer FIFO 20 entradas + TTL 5 min por canal en `state.storage`. Si un cliente se reconecta con `Last-Event-ID`, recibe los eventos perdidos.

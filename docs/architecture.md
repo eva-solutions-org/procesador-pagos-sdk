@@ -2,6 +2,112 @@
 
 > Servicio testeado: commit `380874771a21b56bd42f1db23c60627c62209327`.
 
+## 0. Diagramas full-stack-checkout (v0.2)
+
+### 0.1 Vista global (consumidor + SDK + servicio)
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    BP[BotonPago / useBotonPago]
+  end
+  subgraph BackendConsumidor
+    Hono[app Hono] --> Rutas[rutasPagos sub-app]
+    Rutas --> Crear[POST /crear]
+    Rutas --> Webhook[POST /webhook]
+    Rutas --> Consultar[GET /:id]
+    Rutas --> Eventos[GET /:id/eventos]
+    Rutas --> AlCrearPago[alCrearPago hook]
+    AlCrearPago --> DB[(BD del consumidor)]
+  end
+  subgraph SDK
+    Cliente[crearCliente]
+    PubSub[PubSubAdapter]
+  end
+  subgraph Servicio
+    Procesador[Procesador-de-pagos]
+  end
+  BP -->|POST /pagos/crear| Hono
+  BP -->|GET /pagos/:id/eventos| Eventos
+  Crear --> Cliente
+  Cliente --> Procesador
+  Procesador -->|webhook con HMAC| Webhook
+  Webhook --> PubSub
+  PubSub --> Eventos
+```
+
+### 0.2 Adapters pub/sub disponibles
+
+```mermaid
+flowchart LR
+  PubSub[interface PubSubAdapter]
+  PubSub --> Memoria[adapterMemoria — single-process]
+  PubSub --> Upstash[adapterUpstash — Redis HTTP]
+  PubSub --> DO[adapterDurableObjects — CF DO + SSEHub]
+  DO --> SSEHub[(class SSEHub<br/>buffer 20 + TTL 5min)]
+```
+
+### 0.3 Flujo SSE (snapshot + dedup + heartbeat + onAbort)
+
+```mermaid
+sequenceDiagram
+  participant C as Cliente (browser)
+  participant H as handler-eventos-sse
+  participant P as PubSub
+  C->>H: GET /:id/eventos
+  H->>H: verificarAcceso?
+  H->>H: consultarPago (snapshot)
+  H-->>C: event: snapshot, id: <eventId>
+  H->>P: suscribir(canal)
+  loop cada heartbeatMs
+    H-->>C: event: keepalive
+  end
+  P-->>H: evento publicado
+  H->>H: dedup eventId
+  H-->>C: event: pago.actualizado
+  C->>H: ABORT (cliente cierra)
+  H->>P: unsubscribe (idempotente)
+  H->>H: clearInterval heartbeat
+```
+
+### 0.4 State machine `<BotonPago>`
+
+```mermaid
+stateDiagram-v2
+  [*] --> inicial
+  inicial --> creando: iniciar()
+  creando --> pagando: POST /crear OK
+  creando --> fallido: error
+  pagando --> procesando: PAYMENT_SUCCESS
+  pagando --> inicial: CLOSE
+  pagando --> fallido: ERROR
+  procesando --> completado: estado terminal completado
+  procesando --> fallido: estado terminal fallido/expirado
+  fallido --> creando: reintentar
+  completado --> [*]
+```
+
+### 0.5 Boundary de seguridad (ADR-020)
+
+```mermaid
+flowchart LR
+  subgraph SDK_Resp[Responsabilidades del SDK]
+    Throw[Throw obligatorio sin alCrearPago]
+    Sanit[sanitizar SSE CR/LF]
+    Dedup[dedup eventId]
+    HMAC[verificación HMAC]
+  end
+  subgraph Cons_Resp[Responsabilidades del consumidor]
+    Lookup[Lookup BD en alCrearPago]
+    Cupones[Validación cupones]
+    Owner[Ownership checks]
+    Rate[Rate limiting]
+  end
+  Throw --> Lookup
+```
+
+---
+
 ## 1. Modelo
 
 SDK **backend-to-backend** + **Edge** (no browser). El consumidor es un servicio Node, un Worker Cloudflare, una función Vercel Edge — cualquier runtime que pueda mantener una `apiKey` secreta.
