@@ -173,7 +173,7 @@ Ver `ADR-020 — Security boundary` en `docs/decisions.md` para el threat model 
 | Validation | `apiKey` requerida, no vacía. Mensaje sin valor. |
 | Construction | Header `x-api-key` se setea en el adapter, no es accesible al consumidor. |
 | Error mapping | `mapearErrorHttp` no toca `request.headers`. |
-| Logging | El SDK NO loguea (delegado al consumidor). Sin `console.log`/`debug` en producción. |
+| Logging | El SDK NUNCA loguea datos sensibles (apiKey, secretKey, body completo de webhooks, contenido de metadata del consumidor). Sí emite mensajes a `console.error`/`console.warn` para errores no recuperables y warnings de configuración explícitamente autorizados — ver [ADR-021 — Política de Logging](decisions.md#adr-021--política-de-logging-del-sdk). |
 | Tests | Regex `/apiKeyTestValue/` debe ser ausente en TODOS los `r.error` de los 113 scenarios. |
 
 ---

@@ -267,7 +267,7 @@ Esto facilita re-verificar manualmente si hubo drift entre SDK y servicio.
 - ❌ Single-letter vars (excepto loops idiomáticos `i`, `j`, `k` en `for` con índice).
 - ❌ Comentarios sobre "lo obvio" — preferir nombres claros que código documentado.
 - ❌ `any` o `unknown` sin narrowing posterior. Si entra `unknown`, validar antes de usar.
-- ❌ `console.log` en código de producción. Logging es responsabilidad del consumidor.
+- ❌ `console.log` para flujos normales del SDK. `console.error`/`console.warn` permitidos para errores no recuperables, warnings de configuración (ej. `verificarAcceso` ausente con pubsub) y fallos en hooks de negocio del consumidor — ver [ADR-021 — Política de Logging](decisions.md#adr-021--política-de-logging-del-sdk).
 - ❌ Side effects en imports (excepto el check defensivo C5 documentado en ADR-007).
 - ❌ Default exports — todo es named export.
 - ❌ Usar `Date.now()` o `Math.random()` directo — siempre inyectable para tests (cuando aplique).

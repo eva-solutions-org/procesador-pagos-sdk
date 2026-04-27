@@ -401,7 +401,7 @@ El handler `POST /webhook` debe verificar firma HMAC. El SDK ya expone `verifica
 
 ### Decisión
 
-El handler invoca `verificarWebhookDesdeRequest(c.req.raw, opciones.webhookSecret)` y retorna 401/422 según el `codigo` del Resultado fallido. Si OK, parsea `webhookPayloadSchema` (9 campos verificados 1:1 contra el servicio) y procede con dedup + hooks + publish.
+El handler invoca `verificarWebhookDesdeRequest(c.req.raw, opciones.webhookSecret, { maxBodyBytes: 32 * 1024 })` y retorna 401/413/422 según el `codigo` del Resultado fallido. Si OK, parsea `webhookPayloadSchema` (9 campos verificados 1:1 contra el servicio) y procede con dedup + hooks + publish.
 
 ### Consecuencias
 
@@ -431,6 +431,8 @@ Estrategia mixta:
 - (+) Hooks awaitables permiten transactions atómicas en el consumidor.
 - (+) Publish no bloquea el ack del webhook — buena DX para SSE en frontend.
 - (−) Si un hook lanza, el SDK loguea con `console.error` pero NO falla el ack. El consumidor decide si requiere ack-on-success (puede throwear con prefijo `[NO_ACK]` y custom error mapping).
+
+**Ver también**: ADR-021 (Política de Logging) — clarifica qué se loguea cuando los hooks throw o cuando publish falla sin handler explícito.
 
 ---
 
@@ -565,6 +567,8 @@ El endpoint `GET /:id/eventos` puede leakear el estado de un pago a cualquiera q
 - (+) Warning visible al boot — el dev consciente lo silencia con `verificarAcceso: () => true` explícito (declaración de intención).
 - (−) Warning en logs no es enforce real. Mitigado con doc + checklist pre-deploy.
 
+**Ver también**: ADR-021 (Política de Logging) — el `console.warn` documentado en este ADR es parte de la política general del SDK.
+
 ---
 
 ## ADR-020 — Security boundary: alCrearPago obligatorio + responsabilidades
@@ -632,6 +636,78 @@ El SDK expone props `monto`/`moneda` en el `<BotonPago>` que viajan desde el fro
 ### Riesgo residual: RD10
 
 Consumidor que pasa `alCrearPago: (input) => input` (identity) está expuesto a manipulación monto. Mitigación: docs/security.md sección "Cuándo NO usar identity" + checklist pre-deploy + JSDoc destacado en props del componente.
+
+---
+
+## ADR-021 — Política de Logging del SDK
+
+**Fecha**: 2026-04-27
+**Estado**: Accepted
+**Erratum sobre v0.2.0** (clarifica contradicciones documentales detectadas post-archive).
+
+### Contexto
+
+`security.md` y `conventions.md` originalmente afirmaban en absoluto "el SDK no loguea / sin console.log". Esa formulación contradice el comportamiento intencional definido en ADR-013 (errores de hooks vía console.error) y ADR-019 (warning de verificarAcceso ausente). El código siempre estuvo alineado con los ADRs; las dos afirmaciones absolutas eran imprecisiones documentales.
+
+Este ADR clarifica la política real para evitar futuras malinterpretaciones por auditores externos.
+
+### Decisión
+
+El SDK **NUNCA** loguea:
+- `apiKey` (en errores, traces, ni mensajes).
+- `secretKey` de webhooks.
+- Body completo de webhooks recibidos.
+- `metadata` del consumidor (puede contener PII).
+- Cualquier dato del payload del pago salvo identificadores opacos (`pagoId`, `eventId`).
+
+El SDK **SÍ** loguea a `console.error` o `console.warn`:
+1. **Warnings de configuración** al construir el factory:
+   - `verificarAcceso` ausente con `pubsub` configurado (ADR-019).
+2. **Errores en hooks de negocio del consumidor** cuando el hook throw/rechaza:
+   - `alConfirmar`, `alFallar`, `alReembolsar`, `alWebhookRecibido`, `alAntesDeResponderPolling`.
+   - Estrategia mixta documentada en ADR-013.
+3. **Errores de I/O no recuperables** cuando el consumidor no proveyó callback dedicado:
+   - `publish` al pubsub falla y `onPublishError` no fue provisto.
+   - `subscribe` al pubsub falla y `onSubscribeError` no fue provisto.
+4. **Errores de programación** que indican uso incorrecto del SDK (típicamente seguidos de throw).
+
+Cada `console.error`/`console.warn` incluye:
+- Prefijo `[procesador-pagos-sdk]` para que el consumidor pueda filtrarlo en logs agregados.
+- Mensaje genérico que NO revela contenido del payload.
+- En caso de error, el `Error.message` original (que el consumidor controla en sus hooks).
+
+### Ubicaciones actuales del logging (referencia)
+
+13 `console.error`/`console.warn` distribuidos en:
+- `src/features/rutas-hono/application/handler-crear.ts` (1) — error en `alCrearPago` previo al cliente.
+- `src/features/rutas-hono/application/handler-webhook.ts` (3) — error en hooks de negocio + dedup.
+- `src/features/rutas-hono/application/handler-eventos-sse.ts` (5) — errores de snapshot, subscribe, publish y cleanup.
+- `src/features/rutas-hono/application/handler-consultar.ts` (2) — error en `verificarAcceso` y `alAntesDeResponderPolling`.
+- `src/features/rutas-hono/infrastructure/emitir-warning-verificar-acceso.ts` (1) — warning ADR-019.
+- `src/features/rutas-hono/infrastructure/validar-opciones.ts` (1) — warnings de configuración.
+
+### Cómo silenciar/interceptar
+
+El consumidor puede:
+1. **Monkey-patch global** de `console.error`/`console.warn` con su propio logger antes de instanciar el SDK.
+2. **Implementar todos los hooks de negocio** explícitamente (`alConfirmar`, `alFallar`, etc.) con manejo de errores propio — el SDK NO loguea si el hook resuelve sin throw.
+3. **Implementar `onPublishError` / `onSubscribeError`** en `rutasPagos()` para interceptar errores de pubsub.
+
+### Future work
+
+Considerar agregar callbacks dedicados `onError?: (contexto, error) => void` en `rutasPagos()` y `useBotonPago()` para que el consumidor los redirija a su sistema de logs (Pino, Winston, OpenTelemetry, Datadog, etc.) sin monkey-patch. Queda fuera de scope del erratum — change separado si surge demanda.
+
+### Consecuencias
+
+- Auditorías externas que comparen `security.md` con código ya no reportan falsos positivos.
+- El consumidor sabe exactamente qué se loguea y cómo silenciarlo.
+- Cualquier console.error/warn agregado en el futuro fuera de las 4 categorías es violación de esta política y debe rechazarse en review.
+
+### Referencias cruzadas
+
+- ADR-013 — Estrategia mixta de hooks (await negocio + fire-and-forget publish).
+- ADR-019 — Auth opcional con warning explícito.
+- ADR-020 — Security boundary (responsabilidades SDK vs consumidor).
 
 ---
 
