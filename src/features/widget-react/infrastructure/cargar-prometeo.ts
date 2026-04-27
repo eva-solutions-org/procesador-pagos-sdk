@@ -34,7 +34,14 @@ export function cargarPrometeo(): Promise<void> {
     const script = document.createElement('script');
     script.src = URL_CDN;
     script.async = true;
-    script.onload = (): void => resolve();
+    script.onload = (): void => {
+      if (window.Prometeo) {
+        resolve();
+        return;
+      }
+      promesaCarga = null;
+      reject(new Error('[procesador-pagos-sdk] Prometeo no quedó disponible tras cargar el script'));
+    };
     script.onerror = (): void => {
       promesaCarga = null;
       reject(new Error('[procesador-pagos-sdk] Error cargando Prometeo desde CDN'));
