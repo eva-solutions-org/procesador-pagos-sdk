@@ -13,6 +13,13 @@ import { defineConfig } from "tsdown";
  *
  * Ver `.atl/fase-0-verificacion.md` § T-0-05 para el origen de las URLs
  * placeholder de `development` y `production`.
+ *
+ * Entries v0.2 (full-stack-checkout):
+ * - `index`, `webhooks`: existentes (core).
+ * - `hono`, `hono/upstash`, `hono/durable-objects`, `react`: nuevos opt-in.
+ *   `hono*` usan platform `neutral` (compatibles Node + CF Workers).
+ *   `react` usa platform `browser` con jsx automatic.
+ *   `react`, `react-dom`, `hono`, `@upstash/redis` siempre external (peer deps).
  */
 
 type BuildEnv = "local" | "development" | "production";
@@ -43,22 +50,66 @@ if (env === "production" && apiUrl.includes("localhost")) {
   );
 }
 
-export default defineConfig({
-  entry: {
-    index: "src/index.ts",
-    webhooks: "src/webhooks.ts",
+const EXTERNAL_PEER_DEPS = [
+  "hono",
+  "hono/streaming",
+  "react",
+  "react-dom",
+  "react/jsx-runtime",
+  "@upstash/redis",
+];
+
+const defineInjections = {
+  __SDK_API_URL__: JSON.stringify(apiUrl),
+  __SDK_BUILD_ENV__: JSON.stringify(env),
+};
+
+export default defineConfig([
+  // Core entries (index + webhooks) — sin cambios respecto a v0.1.
+  {
+    entry: {
+      index: "src/index.ts",
+      webhooks: "src/webhooks.ts",
+    },
+    format: ["esm", "cjs"],
+    dts: true,
+    clean: true,
+    sourcemap: true,
+    target: "es2022",
+    fixedExtension: false,
+    define: defineInjections,
+    external: EXTERNAL_PEER_DEPS,
   },
-  format: ["esm", "cjs"],
-  dts: true,
-  clean: true,
-  sourcemap: true,
-  target: "es2022",
-  // Mantener `.js` (ESM) y `.cjs` (CJS), no `.mjs`/`.cjs`. tsdown 0.21+ por
-  // default usa `.mjs` para platform 'node'; el package.json#exports espera
-  // `.js` para `import` y `.cjs` para `require`.
-  fixedExtension: false,
-  define: {
-    __SDK_API_URL__: JSON.stringify(apiUrl),
-    __SDK_BUILD_ENV__: JSON.stringify(env),
+  // Hono entries (neutral platform — Node + CF Workers).
+  {
+    entry: {
+      hono: "src/hono.ts",
+      "hono/upstash": "src/hono/upstash.ts",
+      "hono/durable-objects": "src/hono/durable-objects.ts",
+    },
+    format: ["esm", "cjs"],
+    dts: true,
+    clean: false,
+    sourcemap: true,
+    target: "es2022",
+    platform: "neutral",
+    fixedExtension: false,
+    define: defineInjections,
+    external: EXTERNAL_PEER_DEPS,
   },
-});
+  // React entry (browser platform, jsx automatic).
+  {
+    entry: {
+      react: "src/react.tsx",
+    },
+    format: ["esm", "cjs"],
+    dts: true,
+    clean: false,
+    sourcemap: true,
+    target: "es2022",
+    platform: "browser",
+    fixedExtension: false,
+    define: defineInjections,
+    external: EXTERNAL_PEER_DEPS,
+  },
+]);
