@@ -9,11 +9,11 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { rutasPagos } from "../../../src/hono.js";
+import { _resetDedupCacheParaTests } from '#test-internals/sse-stream';
 import {
   SECRET_KEY_TEST,
   generarFirmaWebhookTest,
 } from "../../helpers/fixtures.js";
-import { _resetDedupCacheParaTests } from "../../../src/features/sse-stream/index.js";
 
 function payloadWebhook(overrides: Partial<Record<string, unknown>> = {}) {
   return JSON.stringify({
@@ -98,6 +98,19 @@ describe("POST /webhook — REQ-RUTAS-004", () => {
       body: cuerpoMalo,
     });
     expect(res.status).toBe(422);
+  });
+
+  it("413 si body firmado excede el límite", async () => {
+    _resetDedupCacheParaTests();
+    const app = rutasPagos({
+      apiKey: "k",
+      webhookSecret: SECRET_KEY_TEST,
+      alCrearPago: (i) => i,
+    });
+    const body = payloadWebhook({ metadata: { blob: "x".repeat(40 * 1024) }, pagoId: "big-1" });
+    const { headers } = await reqFirmado(body);
+    const res = await app.request("/webhook", { method: "POST", headers, body });
+    expect(res.status).toBe(413);
   });
 
   it("Dedup por eventId — segundo POST con mismo payload retorna deduped", async () => {

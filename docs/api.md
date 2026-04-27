@@ -258,7 +258,7 @@ Wrapper sobre `Request` con manejo de body explícito (C1).
 function verificarWebhookDesdeRequest(
   request: Request,
   secretKey: string,
-  options?: { body?: string | Uint8Array },
+  options?: { body?: string | Uint8Array; maxBodyBytes?: number },
 ): Promise<Resultado<{ payload: unknown }>>;
 ```
 
@@ -266,11 +266,12 @@ function verificarWebhookDesdeRequest(
 
 1. `request.headers.get('X-Signature')` (case-insensitive en NOMBRE del header — `Headers.get` nativo).
 2. Header ausente → `401 'Header X-Signature ausente'`.
-3. **C1** — `options.body` PRESENTE → usar tal cual (string o Uint8Array). NO llamar `request.text()`.
-4. **C1** — `options.body` AUSENTE → `await request.text()`. Si lanza `TypeError` (body ya consumido por middleware) → `422 'Body ya consumido o no legible'`.
-5. Verifica firma con `verificarFirmaWebhook`. Falla → propaga `401`.
-6. `JSON.parse(body)` post-firma-OK. Falla → `422 'Body no es JSON válido'`.
-7. Éxito → `{ success: true, data: { payload } }` con `payload: unknown` (validá con tu propio Zod).
+3. `options.maxBodyBytes` permite acotar el tamaño máximo del body; default `32 * 1024` bytes.
+4. **C1** — `options.body` PRESENTE → usar tal cual (string o Uint8Array) después de validar tamaño. NO leer `request.body`.
+5. **C1** — `options.body` AUSENTE → leer `request.body` como stream, rechazando `413 'Body demasiado grande'` si excede el límite y `422 'Body ya consumido o no legible'` si el stream ya fue usado por middleware previo.
+6. Verifica firma con `verificarFirmaWebhook`. Falla → propaga `401`.
+7. `JSON.parse(body)` post-firma-OK. Falla → `422 'Body no es JSON válido'`.
+8. Éxito → `{ success: true, data: { payload } }` con `payload: unknown` (validá con tu propio Zod).
 
 **Idiomático Hono+CF Workers**: pasá `options.body` después de leer `c.req.text()`.
 

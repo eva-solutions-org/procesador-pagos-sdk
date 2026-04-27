@@ -21,7 +21,9 @@ import {
 import { esEventoDuplicado } from '../../sse-stream/index.js';
 import { webhookPayloadSchema } from '../domain/webhook-payload.js';
 import type { AmbienteRutasPagos } from '../domain/contexto-rutas.js';
-import type { Pago } from '../../pagos/domain/index.js';
+import type { Pago } from '../../pagos/index.js';
+
+const WEBHOOK_BODY_MAX_BYTES = 32 * 1024;
 
 const ESTADOS_FALLA: ReadonlyArray<string> = ['fallido', 'expirado', 'cancelado'];
 
@@ -66,9 +68,15 @@ export async function handlerWebhook<Env extends object = object>(
   const opciones = c.get('opcionesPagos');
 
   // 1. Verificar firma HMAC
-  const verif = await verificarWebhookDesdeRequest(c.req.raw, opciones.webhookSecret);
+  const verif = await verificarWebhookDesdeRequest(c.req.raw, opciones.webhookSecret, {
+    maxBodyBytes: WEBHOOK_BODY_MAX_BYTES,
+  });
   if (!verif.success) {
-    const status = verif.codigo === 401 ? 401 : 422;
+    const status = verif.codigo === 401
+      ? 401
+      : verif.codigo === 413
+        ? 413
+        : 422;
     return c.json({ error: verif.error, codigo: verif.codigo }, status);
   }
 

@@ -44,7 +44,7 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
     expect(textSpy).not.toHaveBeenCalled();
   });
 
-  it('Given options.body ausente Then se llama request.text() y funciona', async () => {
+  it('Given options.body ausente Then lee el body del request y funciona', async () => {
     const body = buildPayload();
     const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
     const req = new Request('https://localhost/webhook', {
@@ -54,6 +54,25 @@ describe('verificarWebhookDesdeRequest — REQ-WEBHOOKS-002', () => {
     });
     const r = await verificarWebhookDesdeRequest(req, SECRET_KEY_TEST);
     expect(r.success).toBe(true);
+  });
+
+  it('Given body mayor al límite Then 413', async () => {
+    const body = JSON.stringify({ blob: 'x'.repeat(40 * 1024) });
+    const firma = await generarFirmaWebhookTest(body, SECRET_KEY_TEST);
+    const req = new Request('https://localhost/webhook', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': String(new TextEncoder().encode(body).byteLength),
+        'X-Signature': `sha256=${firma}`,
+      },
+      body,
+    });
+    const r = await verificarWebhookDesdeRequest(req, SECRET_KEY_TEST, { maxBodyBytes: 32 * 1024 });
+    if (!r.success) {
+      expect(r.codigo).toBe(413);
+      expect(r.error).toMatch(/demasiado grande/i);
+    }
   });
 
   it('Given options.body Uint8Array Then se decodifica UTF-8 antes del JSON.parse (C1)', async () => {

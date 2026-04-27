@@ -141,6 +141,30 @@ describe("POST /crear — REQ-RUTAS-003 / S1.1", () => {
     expect(res.status).toBe(400);
   });
 
+  it("413 si body excede el límite configurado", async () => {
+    const app = rutasPagos({
+      apiKey: "k",
+      webhookSecret: "s",
+      alCrearPago: (i) => i,
+    });
+    const body = JSON.stringify({
+      monto: "10.00",
+      moneda: "USD",
+      referenciaExterna: "ref-big",
+      tipo: "pago_unico",
+      metadata: { blob: "x".repeat(80 * 1024) },
+    });
+    const res = await app.request("/crear", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": String(new TextEncoder().encode(body).byteLength),
+      },
+      body,
+    });
+    expect(res.status).toBe(413);
+  });
+
   it("Atacante manipula monto, alCrearPago recalcula desde BD (S1.1)", async () => {
     crearPagoMock.mockReset();
     let inputRecibido: { monto: string; moneda: string } | null = null;

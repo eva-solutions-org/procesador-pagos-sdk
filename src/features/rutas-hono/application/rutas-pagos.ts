@@ -12,6 +12,7 @@
  */
 
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { crearCliente } from '../../../core/cliente/index.js';
 import {
   validarOpcionesRutas,
@@ -26,6 +27,9 @@ import { handlerCrear } from './handler-crear.js';
 import { handlerWebhook } from './handler-webhook.js';
 import { handlerConsultar } from './handler-consultar.js';
 import { handlerEventosSSE } from './handler-eventos-sse.js';
+
+const CREAR_BODY_MAX_BYTES = 64 * 1024;
+const WEBHOOK_BODY_MAX_BYTES = 32 * 1024;
 
 export function rutasPagos<Env extends object = object>(
   args: RutasPagosFactoryArgs<Env>,
@@ -56,8 +60,22 @@ export function rutasPagos<Env extends object = object>(
   });
 
   // Registrar handlers
-  app.post('/crear', handlerCrear);
-  app.post('/webhook', handlerWebhook);
+  app.post(
+    '/crear',
+    bodyLimit({
+      maxSize: CREAR_BODY_MAX_BYTES,
+      onError: (c) => c.json({ error: 'Body demasiado grande', codigo: 413 }, 413),
+    }),
+    handlerCrear,
+  );
+  app.post(
+    '/webhook',
+    bodyLimit({
+      maxSize: WEBHOOK_BODY_MAX_BYTES,
+      onError: (c) => c.json({ error: 'Body demasiado grande', codigo: 413 }, 413),
+    }),
+    handlerWebhook,
+  );
   app.get('/:id', handlerConsultar);
   app.get('/:id/eventos', handlerEventosSSE);
 
