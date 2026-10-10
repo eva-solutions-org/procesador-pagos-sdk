@@ -1,11 +1,8 @@
 /**
  * Schemas Zod del feature `pagos` — VERIFICADOS 1:1 CONTRA EL SERVICIO.
  *
- * Commit hash del servicio testeado: `380874771a21b56bd42f1db23c60627c62209327`.
- *
- * Fuentes literales (snapshot en `.atl/fase-0-verificacion.md`):
- * - `Procesador-de-pagos\src\features\pagos\domain\pago-schemas.ts` (input + filtros + reembolso).
- * - `Procesador-de-pagos\src\routes\pago-response-schemas.ts` (responses HTTP wrappers).
+ * Reflejan los schemas del servicio: input + filtros + reembolso, y los
+ * wrappers de respuesta HTTP.
  *
  * IMPORTANTE — desviaciones intencionales del SDK respecto al servicio:
  * - **C6**: `crearPagoInputSchema.metadata` NO valida tamaño 8KB localmente.

@@ -1,12 +1,7 @@
 /**
  * Constantes y tipos del feature `pagos`.
  *
- * Verificadas 1:1 contra el servicio Procesador-de-pagos.
- * Commit hash del servicio testeado: `380874771a21b56bd42f1db23c60627c62209327`.
- *
- * Fuente:
- * - `D:\GitHub\Proyecto Global\Pagos Service\Procesador-de-pagos\src\core\constants\estados.ts`
- * - `D:\GitHub\Proyecto Global\Pagos Service\Procesador-de-pagos\src\features\pagos\domain\tipos-pago.ts`
+ * Verificadas 1:1 contra el servicio de pagos (constantes de estados y tipos de pago).
  *
  * NO redefinir aquí valores derivados de Zod (`PagoDetalle`, `Pago`, etc.) —
  * esos viven en este archivo importando schemas desde `pago-schemas.ts`.

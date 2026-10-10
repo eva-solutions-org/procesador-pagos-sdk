@@ -1,7 +1,7 @@
 /**
  * Calcula HMAC-SHA256 sobre `mensaje` con `secretKey`, retornando hex lowercase.
  *
- * Mirror del `firmarHmac` del servicio (`Procesador-de-pagos\src\core\crypto\hmac.ts`):
+ * Mirror del `firmarHmac` del servicio:
  *   - WebCrypto `crypto.subtle.sign('HMAC', key, data)`.
  *   - Output convertido a hex con `bytesToHex` (lowercase, 64 chars para SHA-256).
  *

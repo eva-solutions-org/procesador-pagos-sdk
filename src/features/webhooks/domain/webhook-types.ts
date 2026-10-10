@@ -6,10 +6,8 @@
  *   - Output: `bytesToHex` lowercase (64 chars).
  *   - Header `X-Signature`: prefijo literal `sha256=` (lowercase).
  *
- * Verificado contra:
- *   - `Procesador-de-pagos\src\core\crypto\hmac.ts` (firmarHmac).
- *   - `Procesador-de-pagos\src\features\callbacks\application\enviar-callback-service.ts:259`
- *     (uso del prefijo literal `sha256=`).
+ * Verificado contra el servicio: función de firma `firmarHmac` y uso del
+ * prefijo literal `sha256=` en el envío de callbacks.
  *
  * I4 — La regex es **case-sensitive** (sin flag `/i`). El servicio NO produce
  * mayúsculas en ningún tramo de la firma. Variantes como `SHA256=...` o `Sha256=...`
