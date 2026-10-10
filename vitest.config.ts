@@ -4,17 +4,13 @@ import { defineConfig } from "vitest/config";
 /**
  * Vitest config con `projects:` API (Vitest 3+, estándar v4).
  *
- * Pool `node` para tests Node default.
- * Pool `jsdom` para tests del widget React (`tests/features/widget-react/`).
+ * Pool `node` para todos los tests.
  *
  * Reemplaza el patrón deprecated `environmentMatchGlobs` (removido en Vitest 4).
  */
 export default defineConfig({
   resolve: {
     alias: {
-      "#test-internals/sse-stream": fileURLToPath(
-        new URL("./src/features/sse-stream/test-internals.ts", import.meta.url),
-      ),
       "#test-internals/webhooks": fileURLToPath(
         new URL("./src/features/webhooks/test-internals.ts", import.meta.url),
       ),
@@ -35,22 +31,8 @@ export default defineConfig({
             "tests/**/*.{mock,e2e}.test.ts",
             "tests/**/*.{mock,e2e}.test.tsx",
           ],
-          exclude: ["tests/features/widget-react/**"],
           environment: "node",
           globals: false,
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "jsdom",
-          include: [
-            "tests/features/widget-react/**/*.{mock,e2e}.test.ts",
-            "tests/features/widget-react/**/*.{mock,e2e}.test.tsx",
-          ],
-          environment: "jsdom",
-          globals: false,
-          setupFiles: ["./vitest.setup.ts"],
         },
       },
     ],
