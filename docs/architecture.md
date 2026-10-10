@@ -1,110 +1,18 @@
-# Arquitectura — `@eva/procesador-pagos-sdk`
+# Arquitectura — `@eva_solutions/procesador-pagos-sdk`
 
-> Servicio testeado: commit `380874771a21b56bd42f1db23c60627c62209327`.
-
-## 0. Diagramas full-stack-checkout (v0.2)
-
-### 0.1 Vista global (consumidor + SDK + servicio)
+## 0. Vista global
 
 ```mermaid
 flowchart LR
-  subgraph Browser
-    BP[BotonPago / useBotonPago]
+  subgraph BackendConsumidor[Backend del consumidor]
+    App[Tu código] --> Cliente[crearCliente]
+    Handler[Handler de webhooks] --> Verificar[verificarWebhookDesdeRequest]
   end
-  subgraph BackendConsumidor
-    Hono[app Hono] --> Rutas[rutasPagos sub-app]
-    Rutas --> Crear[POST /crear]
-    Rutas --> Webhook[POST /webhook]
-    Rutas --> Consultar[GET /:id]
-    Rutas --> Eventos[GET /:id/eventos]
-    Rutas --> AlCrearPago[alCrearPago hook]
-    AlCrearPago --> DB[(BD del consumidor)]
-  end
-  subgraph SDK
-    Cliente[crearCliente]
-    PubSub[PubSubAdapter]
-  end
-  subgraph Servicio
-    Procesador[Procesador-de-pagos]
-  end
-  BP -->|POST /pagos/crear| Hono
-  BP -->|GET /pagos/:id/eventos| Eventos
-  Crear --> Cliente
-  Cliente --> Procesador
-  Procesador -->|webhook con HMAC| Webhook
-  Webhook --> PubSub
-  PubSub --> Eventos
+  Cliente -->|HTTPS + x-api-key a baseUrl| Procesador[Servicio Procesador-de-pagos]
+  Procesador -->|webhook firmado HMAC-SHA256| Handler
 ```
 
-### 0.2 Adapters pub/sub disponibles
-
-```mermaid
-flowchart LR
-  PubSub[interface PubSubAdapter]
-  PubSub --> Memoria[adapterMemoria — single-process]
-  PubSub --> Upstash[adapterUpstash — Redis HTTP]
-  PubSub --> DO[adapterDurableObjects — CF DO + SSEHub]
-  DO --> SSEHub[(class SSEHub<br/>buffer 20 + TTL 5min)]
-```
-
-### 0.3 Flujo SSE (snapshot + dedup + heartbeat + onAbort)
-
-```mermaid
-sequenceDiagram
-  participant C as Cliente (browser)
-  participant H as handler-eventos-sse
-  participant P as PubSub
-  C->>H: GET /:id/eventos
-  H->>H: verificarAcceso?
-  H->>H: consultarPago (snapshot)
-  H-->>C: event: snapshot, id: <eventId>
-  H->>P: suscribir(canal)
-  loop cada heartbeatMs
-    H-->>C: event: keepalive
-  end
-  P-->>H: evento publicado
-  H->>H: dedup eventId
-  H-->>C: event: pago.actualizado
-  C->>H: ABORT (cliente cierra)
-  H->>P: unsubscribe (idempotente)
-  H->>H: clearInterval heartbeat
-```
-
-### 0.4 State machine `<BotonPago>`
-
-```mermaid
-stateDiagram-v2
-  [*] --> inicial
-  inicial --> creando: iniciar()
-  creando --> pagando: POST /crear OK
-  creando --> fallido: error
-  pagando --> procesando: PAYMENT_SUCCESS
-  pagando --> inicial: CLOSE
-  pagando --> fallido: ERROR
-  procesando --> completado: estado terminal completado
-  procesando --> fallido: estado terminal fallido/expirado
-  fallido --> creando: reintentar
-  completado --> [*]
-```
-
-### 0.5 Boundary de seguridad (ADR-020)
-
-```mermaid
-flowchart LR
-  subgraph SDK_Resp[Responsabilidades del SDK]
-    Throw[Throw obligatorio sin alCrearPago]
-    Sanit[sanitizar SSE CR/LF]
-    Dedup[dedup eventId]
-    HMAC[verificación HMAC]
-  end
-  subgraph Cons_Resp[Responsabilidades del consumidor]
-    Lookup[Lookup BD en alCrearPago]
-    Cupones[Validación cupones]
-    Owner[Ownership checks]
-    Rate[Rate limiting]
-  end
-  Throw --> Lookup
-```
+El SDK expone dos entradas: `.` (cliente, Result Pattern y tipos) y `./webhooks` (verificación de firmas). No hay rutas HTTP, pub/sub ni componentes de UI: eso lo implementa el consumidor (ver [ADR-023](decisions.md#adr-023--paquete-reducido-a-core--webhooks)).
 
 ---
 
@@ -121,7 +29,7 @@ El SDK NO maneja:
 
 El SDK SÍ maneja:
 
-- Construir la URL correcta en build-time (ADR-001).
+- Validar `baseUrl` (solo origin) al crear el cliente y construir cada URL con `new URL(path, baseUrl)` (ADR-022).
 - Mapear errores HTTP al `Resultado<T>` (ADR-002).
 - Cancelación cooperativa (triple `AbortSignal` con `AbortSignal.any` — I5).
 - Verificación HMAC-SHA256 timing-safe (ADR-004).
@@ -132,8 +40,7 @@ El SDK SÍ maneja:
 ```
 src/
 ├── core/                      # Cross-cutting (no Pagos-specific)
-│   ├── cliente/               # Factory funcional `crearCliente`
-│   ├── config.ts              # __SDK_API_URL__ + check defensivo C5
+│   ├── cliente/               # Factory funcional `crearCliente` + validar-base-url
 │   ├── errors/                # AppError + helpers tipados
 │   ├── http-client/           # Factory http + mapeo de errores HTTP
 │   └── types/                 # Resultado<T> + CodigoErrorHttp + helpers narrow
@@ -204,27 +111,25 @@ Beneficios:
 
 Excepción justificada: `iterarPagos` lanza `Error` con `cause: Resultado` (ver ADR-005).
 
-## 5. Build-per-environment
+## 5. Un artefacto, URL en runtime
 
 ```
-EVA_PAGOS_BUILD_ENV ∈ { local, development, production }
+crearCliente({ apiKey, baseUrl })
         │
         ▼
-tsdown define __SDK_API_URL__ + __SDK_BUILD_ENV__
+validarBaseUrl(baseUrl) → URL.origin   (https, o http solo en loopback; sin credenciales, path, query ni fragmento)
         │
         ▼
-dist/index.{js,cjs,d.ts} con URL inlined como string literal
+crearHttpClient: new URL(path, origin) en cada request
 ```
 
-La URL del servicio NO se pasa al constructor del cliente. El consumidor instala una versión específica del SDK que ya sabe contra qué entorno habla.
-
-Defensa runtime adicional (ADR-007 / C5): si el bundle se mezcla (URL local pero env=production), `core/config.ts` lanza al cargar.
+El paquete publicado es el mismo para todos los entornos: el consumidor decide a qué servicio habla pasando `baseUrl`. La validación ocurre una vez, al construir el cliente, y ningún mensaje de error repite el valor recibido. Razones y consecuencias en [ADR-022](decisions.md#adr-022--baseurl-en-runtime-solo-origin).
 
 ## 6. Runtime support
 
 | Runtime | Soporte | Nota |
 |---|---|---|
-| Node 18+ | Sí | `fetch`, `AbortSignal.any`, `AbortSignal.timeout`, `crypto.subtle` nativos desde Node 18+. |
+| Node 20+ | Sí | `engines.node >= 20`. `fetch`, `AbortSignal.any`, `AbortSignal.timeout`, `crypto.subtle` nativos. |
 | Cloudflare Workers | Sí | Requiere flag `nodejs_compat` para soportar `node:crypto` fallback (rara vez se ejecuta — `subtle.timingSafeEqual` está disponible en Workers). |
 | Vercel Edge Runtime | Sí | `subtle.timingSafeEqual` disponible. |
 | Browser | No | apiKey es secreta. El SDK no se hornea para browser (sin minify de single-file UMD). |
@@ -307,15 +212,18 @@ sequenceDiagram
 
 ## 9. Decisiones clave (resumen)
 
-| ADR | Decisión |
-|---|---|
-| ADR-001 | URL del servicio horneada en build-time (no overridable). |
-| ADR-002 | Result Pattern como contrato público. |
-| ADR-003 | Namespace agrupado `cliente.pagos.X`. |
-| ADR-004 | `compararFirmasSeguro` con primitivas nativas (fail-closed). |
-| ADR-005 | `iterarPagos` yields `PagoResumen` directo + throws `Error(msg, { cause: Resultado })`. |
-| ADR-006 | Overrides `fetch`/`timeout`/`headers`/`signal`; URL nunca. |
-| ADR-007 | Defensa runtime contra build mismatch (síncrona al cargar). |
-| ADR-008 | Migración de `tsup` a `tsdown`. |
+| ADR | Decisión | Estado |
+|---|---|---|
+| ADR-001 | URL del servicio horneada en build-time. | Reemplazada por ADR-022. |
+| ADR-002 | Result Pattern como contrato público. | Vigente. |
+| ADR-003 | Namespace agrupado `cliente.pagos.X`. | Vigente. |
+| ADR-004 | `compararFirmasSeguro` con primitivas nativas (fail-closed). | Vigente. |
+| ADR-005 | `iterarPagos` yields `PagoResumen` directo + throws `Error(msg, { cause: Resultado })`. | Vigente. |
+| ADR-006 | Overrides `fetch`/`timeout`/`headers`/`signal`. | Vigente; la URL base ahora es `baseUrl` (ADR-022). |
+| ADR-007 | Defensa runtime contra build mismatch. | Reemplazada por ADR-022 (el chequeo ya no existe). |
+| ADR-008 | Migración de `tsup` a `tsdown`. | Vigente, sin `define`. |
+| ADR-009..021 | Hono, React, pub/sub, SSE, logging de esas superficies. | Obsoletas por ADR-023. |
+| ADR-022 | `baseUrl` en runtime, solo origin. | Vigente. |
+| ADR-023 | Paquete reducido a core + webhooks. | Vigente. |
 
 Detalles completos en `docs/decisions.md`.

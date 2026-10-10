@@ -1,4 +1,4 @@
-# Convenciones — `@eva/procesador-pagos-sdk`
+# Convenciones — `@eva_solutions/procesador-pagos-sdk`
 
 ## 1. Naming
 
@@ -8,7 +8,7 @@
 | Tipos / Interfaces            | `PascalCase`                             | `Resultado`, `ClienteProcesadorPagos`, `CrearPagoInput`                                |
 | Funciones / variables         | `camelCase` en español                   | `crearPago`, `pagosFacade`, `verificarFirmaWebhook`                                    |
 | Términos técnicos             | `camelCase` en inglés cuando es estándar | `apiKey`, `signal`, `fetch`, `timeout`, `headers`, `signature`, `secretKey`, `payload` |
-| Constantes top-level          | `UPPER_SNAKE_CASE`                       | `ESTADOS_PAGO`, `REGEX_FIRMA_WEBHOOK`, `SDK_API_URL`                                   |
+| Constantes top-level          | `UPPER_SNAKE_CASE`                       | `ESTADOS_PAGO`, `TIPOS_PAGO`, `REGEX_FIRMA_WEBHOOK`                                    |
 | Tipos derivados de constantes | `(typeof X)[number]`                     | `type EstadoPago = (typeof ESTADOS_PAGO)[number]`                                      |
 
 ### Reglas mixtas español/inglés
@@ -113,15 +113,15 @@ if (!r.success) {
   return manejarError(r);
 }
 
-// Acá r.success === true, r.data es T.
+// Aquí r.success === true, r.data es T.
 console.log(r.data.pagoId);
 ```
 
 ### Anti-patterns
 
-- ❌ `if ('success' in r)` — siempre es `true`. Usá `r.success` directo.
-- ❌ `try/catch` para errores de negocio. Usá `if (!r.success)`.
-- ❌ Devolver `null`/`undefined` para errores. Usá `Resultado.fallo(...)`.
+- ❌ `if ('success' in r)` — siempre es `true`. Usa `r.success` directo.
+- ❌ `try/catch` para errores de negocio. Usa `if (!r.success)`.
+- ❌ Devolver `null`/`undefined` para errores. Usa `Resultado.fallo(...)`.
 - ❌ Lanzar para errores HTTP esperados (401/422/etc). El SDK los mapea a `Resultado`.
 
 ### Excepción justificada: `iterarPagos`
@@ -238,13 +238,13 @@ Reserva el sufijo `.e2e.test.ts` para tests futuros que vayan contra un servicio
 
 ## 7. JSDoc de cita al servicio
 
-Cada archivo que mirror-ea algo del servicio cita el path canonical:
+Cada archivo que mirror-ea algo del servicio cita su origen, sin rutas locales de ninguna máquina:
 
 ```typescript
 /**
  * Schema 1:1 con servicio.
- * Source: D:\...\Procesador-de-pagos\src\features\pagos\domain\pago-schemas.ts
- * Verified against commit: 380874771a21b56bd42f1db23c60627c62209327
+ * Source: <módulo del servicio que define el schema>
+ * Verified against: <versión o commit del servicio>
  */
 ```
 
@@ -267,7 +267,7 @@ Esto facilita re-verificar manualmente si hubo drift entre SDK y servicio.
 - ❌ Single-letter vars (excepto loops idiomáticos `i`, `j`, `k` en `for` con índice).
 - ❌ Comentarios sobre "lo obvio" — preferir nombres claros que código documentado.
 - ❌ `any` o `unknown` sin narrowing posterior. Si entra `unknown`, validar antes de usar.
-- ❌ `console.log` para flujos normales del SDK. `console.error`/`console.warn` permitidos para errores no recuperables, warnings de configuración (ej. `verificarAcceso` ausente con pubsub) y fallos en hooks de negocio del consumidor — ver [ADR-021 — Política de Logging](decisions.md#adr-021--política-de-logging-del-sdk).
-- ❌ Side effects en imports (excepto el check defensivo C5 documentado en ADR-007).
+- ❌ `console.log` para flujos normales del SDK. Desde 0.3.0 el SDK no emite ningún `console.*`: [ADR-021 — Política de Logging](decisions.md#adr-021--política-de-logging-del-sdk) describe superficies que ya no existen (ADR-023).
+- ❌ Side effects en imports.
 - ❌ Default exports — todo es named export.
 - ❌ Usar `Date.now()` o `Math.random()` directo — siempre inyectable para tests (cuando aplique).

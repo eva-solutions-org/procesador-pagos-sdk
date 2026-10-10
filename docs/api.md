@@ -1,10 +1,6 @@
-# Referencia de API — `@eva/procesador-pagos-sdk`
+# Referencia de API — `@eva_solutions/procesador-pagos-sdk`
 
-> **Versión del servicio testeada**: commit `380874771a21b56bd42f1db23c60627c62209327` del repo `Procesador-de-pagos`.
->
-> Path canonical citado: `D:\GitHub\Proyecto Global\Pagos Service\Procesador-de-pagos\src\routes\v1-router.ts`.
-
-Esta es la referencia completa de la API pública del SDK. Para el quickstart, ver `README.md`. Para la arquitectura interna, ver `docs/architecture.md`.
+Esta es la referencia completa de la API pública del SDK. El paquete tiene dos entradas: `@eva_solutions/procesador-pagos-sdk` (cliente, Result Pattern y tipos) y `@eva_solutions/procesador-pagos-sdk/webhooks` (verificación de firmas). Para el quickstart, ver `README.md`. Para la arquitectura interna, ver `docs/architecture.md`.
 
 ---
 
@@ -19,6 +15,7 @@ function crearCliente(opciones: OpcionesCliente): ClienteProcesadorPagos;
 
 interface OpcionesCliente {
   apiKey: string;                                    // requerido, no vacío
+  baseUrl: string;                                   // requerido, solo origin (ver "baseUrl" abajo)
   timeout?: number;                                  // ms — default 10_000, rango 0..Number.MAX_SAFE_INTEGER
   headers?: Record<string, string>;                  // headers extra (los internos ganan ante colisión)
   fetch?: typeof globalThis.fetch;                   // override (para tests, retry-layer custom, etc.)
@@ -32,10 +29,34 @@ interface ClienteProcesadorPagos {
 
 **Errores síncronos** (lanzados al llamar):
 
-- `apiKey` no string o vacío → `throw new Error('apiKey requerida (string no vacío)')`. NUNCA incluye el valor de la apiKey.
-- `timeout` fuera del rango válido de `AbortSignal.timeout()` → `throw new Error('timeout debe estar entre 0 y Number.MAX_SAFE_INTEGER (ms)')`.
+- `apiKey` no string o vacío → `throw new Error('[procesador-pagos-sdk] apiKey es requerido y debe ser string no vacío')`. NUNCA incluye el valor de la apiKey.
+- `baseUrl` ausente o inválida → `throw new Error('[procesador-pagos-sdk] baseUrl ...')`. El mensaje indica la causa y NUNCA incluye el valor recibido.
+- `timeout` fuera del rango válido de `AbortSignal.timeout()` → `throw new Error('[procesador-pagos-sdk] timeout debe estar entre 0 y Number.MAX_SAFE_INTEGER (ms)')`.
 
 **Alias**: `createClienteProcesadorPagos` es exactamente `crearCliente` (mismo binding).
+
+### `baseUrl`
+
+Origin del servicio, validado una vez al crear el cliente y normalizado a `URL.origin`. Cada request usa `new URL(path, origin)`.
+
+| Se acepta | Ejemplo |
+|---|---|
+| `https` con host y puerto opcional | `https://pagos.example.com`, `https://pagos.example.com:8443` |
+| `http` solo en loopback | `http://localhost:6000`, `http://127.0.0.1:6000`, `http://[::1]:6000` |
+| Barra final (se normaliza) | `https://pagos.example.com/` → `https://pagos.example.com` |
+
+| Se rechaza | Ejemplo |
+|---|---|
+| Ausente, vacía o no string | `undefined`, `""` |
+| Malformada | `not a url` |
+| `http` fuera de loopback | `http://pagos.example.com` |
+| Esquema distinto de `https`/`http` | `ftp://host` |
+| Credenciales | `https://usuario:clave@host` |
+| Path distinto de `/` | `https://host/v1` |
+| Query (incluso `?` vacío) | `https://host?x=1` |
+| Fragmento (incluso `#` vacío) | `https://host#f` |
+
+Un path se rechaza en vez de ignorarse porque `new URL(path, base)` descarta en silencio el path de la base. Ver [ADR-022](decisions.md#adr-022--baseurl-en-runtime-solo-origin).
 
 ---
 
@@ -49,7 +70,7 @@ POST `/api/v1/pagos`. Crea un nuevo pago.
 interface CrearPagoInput {
   monto: string;                                     // regex /^(?:0|[1-9]\d{0,7})\.\d{2}$/
   moneda: string;                                    // length 3, será uppercase ('usd' → 'USD')
-  tipo: 'pago_unico' | 'suscripcion' | 'recurrente';
+  tipo: 'pago_unico' | 'suscripcion' | 'recarga';
   referenciaExterna: string;
   titular?: { nombre: string; email: string };
   descripcion?: string;
@@ -175,7 +196,7 @@ function iterarPagos(
 **Idiomático Stripe-node / AWS SDK v3 / Octokit**.
 
 ```typescript
-import type { Resultado } from '@eva/procesador-pagos-sdk';
+import type { Resultado } from '@eva_solutions/procesador-pagos-sdk';
 
 try {
   for await (const pago of cliente.pagos.iterarPagos({ estado: 'pendiente' })) {
@@ -226,7 +247,7 @@ interface PagoReembolsadoResponse {
 
 ## 3. Webhooks
 
-> Subpath dedicado: `import … from '@eva/procesador-pagos-sdk/webhooks'`.
+> Subpath dedicado: `import … from '@eva_solutions/procesador-pagos-sdk/webhooks'`.
 
 ### 3.1 `verificarFirmaWebhook(input): Promise<Resultado<true>>`
 
@@ -248,7 +269,7 @@ function verificarFirmaWebhook(input: {
 | `signature` no matchea `/^sha256=[a-f0-9]{64}$/` (case-sensitive — I4) | `'Formato de firma inválido'` |
 | HMAC computado distinto al recibido | `'Firma inválida'` |
 
-> **I4 — Regex case-sensitive**: rechaza `Sha256=...`, `SHA256=...`, `sha256=ABCD...`. El servicio firma con prefijo lowercase + hex lowercase (verificado en `enviar-callback-service.ts:259` + `bytesToHex` → `hmac.ts`).
+> **I4 — Regex case-sensitive**: rechaza `Sha256=...`, `SHA256=...`, `sha256=ABCD...`. El servicio firma con prefijo lowercase + hex lowercase.
 
 ### 3.2 `verificarWebhookDesdeRequest(request, secretKey, options?): Promise<Resultado<{ payload: unknown }>>`
 
@@ -271,9 +292,9 @@ function verificarWebhookDesdeRequest(
 5. **C1** — `options.body` AUSENTE → leer `request.body` como stream, rechazando `413 'Body demasiado grande'` si excede el límite y `422 'Body ya consumido o no legible'` si el stream ya fue usado por middleware previo.
 6. Verifica firma con `verificarFirmaWebhook`. Falla → propaga `401`.
 7. `JSON.parse(body)` post-firma-OK. Falla → `422 'Body no es JSON válido'`.
-8. Éxito → `{ success: true, data: { payload } }` con `payload: unknown` (validá con tu propio Zod).
+8. Éxito → `{ success: true, data: { payload } }` con `payload: unknown` (valida con tu propio Zod).
 
-**Idiomático Hono+CF Workers**: pasá `options.body` después de leer `c.req.text()`.
+**Idiomático Hono+CF Workers** (en tu app): pasa `options.body` después de leer `c.req.text()`.
 
 ---
 
@@ -305,7 +326,7 @@ Patrón recomendado (TS strict):
 if (!r.success) {
   return res.status(r.codigo).json({ error: r.error });
 }
-// Acá r.data es T
+// Aquí r.data es T
 ```
 
 ---
@@ -360,7 +381,7 @@ El servicio retorna **dos shapes distintos** según el endpoint:
 ### Comparación side-by-side
 
 ```
-crearPagoResponseSchema (10 — verificado en pago-response-schemas.ts)
+crearPagoResponseSchema (10)
 ├── pagoId
 ├── intentId?
 ├── paymentLink?
@@ -372,7 +393,7 @@ crearPagoResponseSchema (10 — verificado en pago-response-schemas.ts)
 ├── monedaOriginal
 └── expiresAt: nullable
 
-pagoDetalleSchema (22 — verificado contra pagoDetalleResponseSchema)
+pagoDetalleSchema (22)
 ├── id
 ├── proyectoId             # NO en crear
 ├── pasarelaId             # NO en crear
@@ -403,7 +424,7 @@ pagoDetalleSchema (22 — verificado contra pagoDetalleResponseSchema)
 
 ## 7. Estados de pago
 
-Constante `ESTADOS_PAGO` (9 valores, 1:1 con servicio):
+Constante `ESTADOS_PAGO` (9 valores, verificados contra el servicio):
 
 ```typescript
 const ESTADOS_PAGO = [
@@ -411,53 +432,33 @@ const ESTADOS_PAGO = [
   'procesando',
   'completado',
   'fallido',
-  'cancelado',
-  'reembolsado',
-  'reembolso_parcial',
   'expirado',
-  'requiere_accion',
+  'reembolsado',
+  'reembolsando',
+  'cancelado',
+  'cancelando',
 ] as const;
 
-type EstadoPago = typeof ESTADOS_PAGO[number];
+type EstadoPago = (typeof ESTADOS_PAGO)[number];
 ```
 
-### Máquina de transiciones (canónica del servicio)
+### Transiciones entre estados
 
-```
-                    ┌───────────────────────┐
-                    │      pendiente        │
-                    └──────┬─────┬─────┬────┘
-                           │     │     │
-                    ┌──────▼──┐  │  ┌──▼─────────┐
-                    │procesando│  │  │  expirado  │  (TTL automático)
-                    └──┬───┬──┬┘  │  └────────────┘
-                       │   │  │   │
-            ┌──────────▼┐  │  │   │   ┌───────────┐
-            │ completado │  │  │   └──▶│ cancelado │ (acción manual)
-            └─────┬───┬─┘  │  │       └───────────┘
-                  │   │    │  │
-        ┌─────────▼┐ ┌▼────▼┐ │
-        │reembolsado│ │fallido│ │
-        └───────────┘ └───────┘ │
-                                │
-                    ┌───────────▼─────────┐
-                    │  requiere_accion    │
-                    └─────────────────────┘
-```
+El SDK **no codifica** la máquina de transiciones: solo expone la lista de estados y valida con Zod que el campo `estado` de las respuestas sea uno de ellos. Las transiciones permitidas las decide el servicio; consulta su documentación para el diagrama canónico.
 
-Estados terminales (cancelar/reembolsar fallan con `422`): `completado`, `fallido`, `cancelado`, `reembolsado`, `expirado`.
+Lo que sí observa el SDK: `cancelarPago` y `reembolsarPago` devuelven `422` cuando el servicio rechaza la operación por el estado actual del pago (ver §2.5 y §2.6).
 
 ## 8. Tipos de pago
 
 ```typescript
-const TIPOS_PAGO = ['pago_unico', 'suscripcion', 'recurrente'] as const;
+const TIPOS_PAGO = ['pago_unico', 'suscripcion', 'recarga'] as const;
 type TipoPago = typeof TIPOS_PAGO[number];
 ```
 
 ## 9. Métodos de pago
 
 ```typescript
-const METODOS_PAGO = ['transfer', 'qr'] as const;  // verificado en tipos-pago.ts:21
+const METODOS_PAGO = ['transfer', 'qr'] as const;
 type MetodoPago = typeof METODOS_PAGO[number];
 ```
 
@@ -465,119 +466,6 @@ type MetodoPago = typeof METODOS_PAGO[number];
 
 ---
 
-## 10. Entry `@eva/procesador-pagos-sdk/hono` — `rutasPagos()` (v0.2)
+## 10. Entradas eliminadas en 0.3.0
 
-### Firma
-
-```typescript
-import { rutasPagos, crearRutasPagos } from "@eva/procesador-pagos-sdk/hono";
-
-function rutasPagos<Env extends object = object>(
-  args: RutasPagosOpciones | ((env: Env) => RutasPagosOpciones | Promise<RutasPagosOpciones>),
-): Hono<{ Bindings: Env; Variables: VariablesRutasPagos }>;
-```
-
-### Opciones (`RutasPagosOpciones`)
-
-| Campo | Tipo | Required | Descripción |
-|---|---|---|---|
-| `apiKey` | `string` | sí | API key del servicio Procesador-de-pagos. NUNCA logueada. |
-| `webhookSecret` | `string` | sí | Secret HMAC para verificar webhooks. |
-| **`alCrearPago`** | `(input, c) => CrearPagoInput \| Promise<CrearPagoInput>` | **sí** | **OBLIGATORIO (S1.1).** Recalcula monto canónico desde la BD del consumidor. Throw síncrono al construir el factory si ausente. |
-| `pubsub?` | `PubSubAdapter` | no | Si presente, registra el endpoint `GET /:id/eventos` (SSE). Sino → 404. |
-| `verificarAcceso?` | `(c, pagoId) => boolean \| Promise<boolean>` | no | Auth del endpoint SSE. Si pubsub presente y verificarAcceso ausente → `console.warn`. |
-| `alConfirmar?`, `alFallar?`, `alReembolsar?`, `alWebhookRecibido?`, `alAntesDeResponderPolling?` | `(pago: Pago) => void \| Promise<void>` | no | Hooks awaitables. |
-| `onPublishError?`, `onSubscribeError?` | `(err: unknown) => void` | no | Callbacks de error en pubsub. |
-| `heartbeatMs?` | `number` | no | Custom heartbeat. Clamp `[10000, 60000]`. Default `30000`. |
-
-### Endpoints registrados
-
-| Método | Path | Descripción |
-|---|---|---|
-| `POST` | `/crear` | Crea pago. Body: `CrearPagoInput`. Response: `{ intentId, pagoId, modo, basePath }`. |
-| `POST` | `/webhook` | Verifica HMAC, dedup eventId, invoca hooks de negocio. Response: `{ ok: true }` o `{ ok: true, deduped: true }`. |
-| `GET` | `/:id` | Consulta polling. Si `verificarAcceso` está, valida; sino 401. |
-| `GET` | `/:id/eventos` | SSE. Solo si `pubsub` configurado, sino 404. |
-
-### Ejemplos
-
-```typescript
-// Args literal (Node)
-const app = new Hono();
-app.route("/pagos", rutasPagos({
-  apiKey: process.env.API_KEY!,
-  webhookSecret: process.env.WEBHOOK_SECRET!,
-  alCrearPago: async (input, c) => {
-    const producto = await db.productos.findById(input.metadata.productoId);
-    return { ...input, monto: producto.precio.toFixed(2), moneda: producto.moneda };
-  },
-  pubsub: adapterMemoria(),
-  verificarAcceso: (c, pagoId) => verifySession(c, pagoId),
-}));
-
-// Args lazy (CF Workers — secrets en env)
-app.route("/pagos", rutasPagos<Env>((env) => ({
-  apiKey: env.API_KEY,
-  webhookSecret: env.WEBHOOK_SECRET,
-  alCrearPago: async (input) => input,
-  pubsub: adapterDurableObjects({ binding: env.SSE_HUB }),
-})));
-```
-
-> Alias dual: `crearRutasPagos === rutasPagos` (UX-2).
-
----
-
-## 11. Entry `@eva/procesador-pagos-sdk/react` — `<BotonPago>` y `useBotonPago` (v0.2)
-
-### Componente `<BotonPago>` (`PropsBotonPago`)
-
-| Prop | Tipo | Required | Notas |
-|---|---|---|---|
-| `monto` | `string` | sí | **DISPLAY ONLY**. Backend recalcula desde BD. |
-| `moneda` | `string` | sí | **DISPLAY ONLY** (ISO 4217). |
-| `referenciaExterna` | `string` | sí | Único por proyecto (anti-replay). |
-| `metadata?` | `Record<string, unknown>` | no | Identificadores `productoId`, `cantidad`, `cuponCodigo` que el backend usa en `alCrearPago`. |
-| `widgetId?` | `string` | no | Sino lee de `VITE_PROMETEO_WIDGET_ID` o `NEXT_PUBLIC_PROMETEO_WIDGET_ID`. |
-| `basePath?` | `string` | no | Default `/`. |
-| `intervaloMs?` | `number` | no | Polling clamp `[500, 30000]`. Default `2000`. |
-| `timeoutMs?` | `number` | no | Default `60000`. |
-| `style?` / `styles?` / `className?` / `children?` | varios | no | Customización. `className` desactiva inline base. `children` (render-prop) toma control total. |
-| `textoBoton?`, `textoCreando?`, `textoProcesando?`, `textoTimeoutSuave?`, `textoReintentar?` | `string` | no | Textos UX. |
-| `onCompletado?(pago)`, `onFallido?(err)`, `onTimeoutSuave?(pago)`, `onCancelado?()` | callbacks | no | |
-
-### Hook `useBotonPago(opciones)` → `ApiRenderPropBoton`
-
-```typescript
-type OpcionesUseBotonPago = Omit<PropsBotonPago, "style" | "styles" | "className" | "children">;
-
-interface ApiRenderPropBoton {
-  iniciar: () => Promise<void>;
-  cerrar: () => void;
-  estado: EstadoBoton;       // discriminated union 6 fases
-  error: string | null;
-  pago: Pago | null;
-  intentId: string | null;
-}
-```
-
-### Estados (`EstadoBoton`)
-
-```
-inicial → creando → pagando → procesando → completado | fallido
-                          ↓
-                       inicial (CLOSE)
-```
-
-### Ejemplo render-prop
-
-```tsx
-<BotonPago monto="100.00" moneda="USD" referenciaExterna="orden-1" metadata={{ productoId: 7 }}>
-  {({ iniciar, estado, error }) => (
-    <button onClick={iniciar} disabled={estado.fase !== "inicial"}>
-      {error ? "Reintentar" : "Pagar"}
-    </button>
-  )}
-</BotonPago>
-```
-
+Las entradas `/hono`, `/hono/upstash`, `/hono/durable-objects` y `/react` ya no existen (`rutasPagos`, `<BotonPago>`, `useBotonPago`, los adapters pub/sub y el hook `alCrearPago`). Quedan solo `.` y `./webhooks`. Motivo: [ADR-023](decisions.md#adr-023--paquete-reducido-a-core--webhooks). Para el flujo de checkout, usa `cliente.pagos.crearPago` desde tu propio backend y `verificarWebhookDesdeRequest` en tu handler de webhooks; sobre el monto, ver `docs/security.md` §2.

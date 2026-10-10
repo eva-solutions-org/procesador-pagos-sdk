@@ -3,7 +3,8 @@
  *
  * Verifica que el doc obligatorio "Validación server-side OBLIGATORIA"
  * existe con todos los componentes (INSEGURO/SEGURO/checklist/cuándo NO
- * usar identity).
+ * copiar el monto del request) y que no quedan referencias a la API
+ * eliminada (`rutasPagos`, `alCrearPago`).
  *
  * Regex sobre texto crudo — NO AST de markdown (recomendación spec).
  */
@@ -21,10 +22,11 @@ describe("docs/security.md — REQ-DOCS-001 / S1.3", () => {
     expect(md).toMatch(/##\s+(?:\d+\.\s+)?Validación server-side OBLIGATORIA/);
   });
 
-  it("Contiene ejemplos INSEGURO + SEGURO + alCrearPago", () => {
+  it("Contiene ejemplos INSEGURO + SEGURO con crearPago, sin la API eliminada", () => {
     expect(md).toMatch(/INSEGURO/);
     expect(md).toMatch(/SEGURO/);
-    expect(md).toMatch(/alCrearPago/);
+    expect(md).toMatch(/crearPago/);
+    expect(md).not.toMatch(/alCrearPago|rutasPagos/);
   });
 
   it("Contiene checklist pre-deploy", () => {
@@ -37,7 +39,7 @@ describe("docs/security.md — REQ-DOCS-001 / S1.3", () => {
     expect(md).toMatch(/\| Vector/);
   });
 
-  it("Contiene 'Cuándo NO usar identity'", () => {
-    expect(md).toMatch(/Cuándo NO usar identity/i);
+  it("Contiene 'Cuándo NO copiar el monto del request'", () => {
+    expect(md).toMatch(/Cuándo NO copiar el monto del request/i);
   });
 });

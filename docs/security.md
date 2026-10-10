@@ -1,4 +1,4 @@
-# Security — `@eva/procesador-pagos-sdk`
+# Security — `@eva_solutions/procesador-pagos-sdk`
 
 > Documento de modelo de amenazas y políticas de seguridad del SDK. Decisión A6: SÍ va en MVP.
 
@@ -17,7 +17,7 @@ El SDK opera como **cliente backend-to-backend** que:
 |---|---|---|
 | `apiKey` del consumidor | Secreto a largo plazo (rotable) | NUNCA en errors, headers privados, sin logging interno. |
 | `secretKey` HMAC | Secreto compartido SDK ↔ servicio | Solo se usa dentro del handler de webhook del consumidor; NO se persiste. |
-| Integridad de URLs del servicio | Build-time injection | `__SDK_API_URL__` horneada (ADR-001) + defensa runtime (ADR-007). |
+| Destino de las requests (adónde viaja la `apiKey`) | `baseUrl` que fija el consumidor | `validarBaseUrl` exige un origin `https` (o `http` en loopback), sin credenciales, path, query ni fragmento (ADR-022). |
 
 ### Amenazas consideradas
 
@@ -25,8 +25,8 @@ El SDK opera como **cliente backend-to-backend** que:
 |---|---|
 | **Leak de apiKey** vía logging accidental | `apiKey` NUNCA en `error.message` ni `cause`. Tests validan con regex. |
 | **Timing attack** sobre comparación HMAC | `compararFirmasSeguro` delega a `crypto.subtle.timingSafeEqual` o `node:crypto.timingSafeEqual` (primitivas nativas auditadas). Fail-closed si no disponibles (ADR-004). |
-| **MitM** vía URL manipulation runtime | URL no es runtime configurable (ADR-001). El servicio usa HTTPS (Cloudflare TLS). |
-| **Build mismatch** (publicar bundle production con URL localhost) | Defensa runtime (ADR-007 / C5): `core/config.ts` lanza al cargar si detecta inconsistencia. |
+| **Desvío del destino** (la `apiKey` viaja a otro host) | El SDK no lee variables de entorno: el destino es únicamente el `baseUrl` que pasa el consumidor. Se valida al crear el cliente: solo `https` (o `http` en loopback), sin credenciales ni path. Proteger la config de despliegue que alimenta `baseUrl` es responsabilidad del consumidor. |
+| **`baseUrl` insegura o ambigua** (http remoto, path que se descartaría, credenciales en la URL) | `validarBaseUrl` lanza síncronamente al llamar a `crearCliente`; ningún mensaje repite el valor recibido. |
 | **Replay attack** sobre webhooks | Out-of-scope del SDK (responsabilidad del consumidor: timestamping del payload + idempotency). |
 | **Webhook forgery** (atacante simula servicio) | `verificarFirmaWebhook` rechaza firmas no calculadas con la `secretKey` (HMAC-SHA256 + timing-safe). |
 | **Body tampering** post-firma-válida | `JSON.parse` post-verificación: si el body fue modificado para no parsear, retorna `422`. |
@@ -37,119 +37,100 @@ El SDK opera como **cliente backend-to-backend** que:
 
 ---
 
-## 2. Validación server-side OBLIGATORIA (alCrearPago)
+## 2. Validación server-side OBLIGATORIA del monto
 
-> **Esta sección es de cumplimiento obligatorio si usás `rutasPagos()` (entry `@eva/procesador-pagos-sdk/hono`).** El SDK fuerza la presencia del hook `alCrearPago` con un `throw` síncrono al construir el factory — si lo olvidás, tu servicio no arranca.
+> **Responsabilidad del consumidor.** El SDK no incluye rutas HTTP ni hooks que fuercen esta validación (esas superficies se eliminaron, ver ADR-023): quien llama a `crearPago` es responsable de que `monto` y `moneda` salgan de una fuente confiable.
 
 ### 2.1 Por qué es obligatorio
 
-El frontend NO es trusted. Cualquier valor que viaja desde `<BotonPago>` (`monto`, `moneda`, `referenciaExterna`, `metadata`) puede ser manipulado por un atacante con devtools del browser. El servidor del consumidor MUST recalcular el monto canónico desde su BD usando un identificador confiable (típicamente `metadata.productoId`).
+El frontend NO es trusted. Cualquier valor que viaje desde el navegador (`monto`, `moneda`, `referenciaExterna`, `metadata`) puede ser manipulado por un atacante con devtools. Tu servidor MUST recalcular el monto canónico desde su BD usando un identificador confiable (típicamente `productoId`).
 
 ```
-Browser (UNTRUSTED) ──► Backend del consumidor ──► SDK (rutasPagos) ──► Procesador-de-pagos
-   $ devtools edit         alCrearPago hook         crearPago client       crear-pago service
-   monto = 0.01            recalcula desde BD       envía monto canónico
+Browser (UNTRUSTED) ──► Backend del consumidor ──► SDK (crearPago) ──► Procesador-de-pagos
+   $ devtools edit         recalcula desde BD        cliente.pagos       crear-pago service
+   monto = 0.01            monto canónico            envía el monto que recibe
 ```
+
+El SDK envía el `monto` que le pasas: no puede saber si es el correcto.
 
 ### 2.2 Ejemplo INSEGURO
 
 ```typescript
 // Manipulación del atacante:
 // 1. Abre devtools en el browser.
-// 2. Edita el request POST /pagos/crear y cambia monto: '0.01'.
-// 3. Backend lo pasa al servicio Procesador-de-pagos sin recalcular.
-// 4. Atacante paga 1 centavo por un producto de 10 soles.
-//
-// El SDK previene esto con throw obligatorio — esta sección documenta el por qué.
+// 2. Edita el request a tu endpoint y cambia monto: '0.01'.
+// 3. Tu backend lo pasa a crearPago sin recalcular.
+// 4. El atacante paga 1 centavo por un producto de 10 soles.
 
-// ❌ INSEGURO — sin alCrearPago, el SDK throwea al construir el factory:
-app.route('/pagos', rutasPagos({
-  apiKey: process.env.PROCESADOR_API_KEY!,
-  webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
-  // ⚠️ falta alCrearPago → throw síncrono al boot:
-  //   "[procesador-pagos-sdk] alCrearPago es OBLIGATORIO ..."
-}));
+// ❌ INSEGURO — el monto viene tal cual del request del browser:
+app.post('/pagos/crear', async (c) => {
+  const body = await c.req.json();
+  return c.json(await cliente.pagos.crearPago(body)); // monto/moneda del atacante
+});
 ```
 
 ### 2.3 Ejemplo SEGURO
 
 ```typescript
-// ✅ SEGURO — alCrearPago recalcula desde la BD del consumidor:
-app.route('/pagos', rutasPagos({
-  apiKey: process.env.PROCESADOR_API_KEY!,
-  webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
-  alCrearPago: async (input, c) => {
-    // 1. Frontend manda metadata.productoId — confiable como identificador.
-    const producto = await db.productos.findById(input.metadata.productoId);
-    if (!producto) throw new Error('Producto no encontrado');
+// ✅ SEGURO — el monto se recalcula desde la BD del consumidor:
+app.post('/pagos/crear', async (c) => {
+  const body = await c.req.json();
 
-    // 2. Calcular monto canónico desde la BD.
-    let montoCentavos = producto.precio;
+  // 1. El frontend manda productoId — confiable solo como identificador.
+  const producto = await db.productos.findById(body.productoId);
+  if (!producto) return c.json({ error: 'Producto no encontrado' }, 404);
 
-    // 3. Aplicar cupón si viene (validar primero).
-    if (input.metadata.cuponCodigo) {
-      const cupon = await db.cupones.findValid(input.metadata.cuponCodigo);
-      if (cupon) montoCentavos = aplicarCupon(montoCentavos, cupon);
-    }
+  // 2. Verificar ownership (¿el usuario puede comprar este producto?).
+  const userId = c.get('userId');
+  await verificarOwnership(userId, producto);
 
-    // 4. Aplicar cantidad si viene.
-    if (input.metadata.cantidad) {
-      montoCentavos *= Number(input.metadata.cantidad);
-    }
+  // 3. Calcular el monto canónico desde la BD.
+  let montoCentavos = producto.precio;
+  if (body.cuponCodigo) {
+    const cupon = await db.cupones.findValid(body.cuponCodigo);
+    if (cupon) montoCentavos = aplicarCupon(montoCentavos, cupon);
+  }
+  if (body.cantidad) montoCentavos *= Number(body.cantidad);
 
-    // 5. Verificar ownership (¿el usuario puede comprar este producto?).
-    const userId = c.get('userId');
-    await verificarOwnership(userId, producto);
-
-    return {
-      ...input,
-      monto: (montoCentavos / 100).toFixed(2),
-      moneda: producto.moneda,
-    };
-  },
-}));
+  const r = await cliente.pagos.crearPago({
+    monto: (montoCentavos / 100).toFixed(2),
+    moneda: producto.moneda,
+    tipo: 'pago_unico',
+    referenciaExterna: body.referenciaExterna,
+  });
+  return c.json(r);
+});
 ```
 
 ### 2.4 Tabla de manipulaciones del atacante
 
 | Amenaza | Vector | Mitigación |
 |---|---|---|
-| Cambia `monto` a `0.01` | Devtools edita request | `alCrearPago` recalcula desde `metadata.productoId` |
-| Cambia `moneda` a `USD` (era `PEN`) | Devtools edita request | `alCrearPago` recalcula desde producto |
-| Cambia `metadata.productoId` a uno más caro | Devtools edita request | Ownership check + auth de session |
-| Cambia `metadata.cantidad` a `0` | Devtools edita request | Validar `cantidad >= 1` y `<= maxStock` en el hook |
-| Aplica cupón inválido | Devtools edita metadata | Validar cupón contra BD antes de aplicar |
+| Cambia `monto` a `0.01` | Devtools edita request | Recalcular desde `productoId` en el backend |
+| Cambia `moneda` a `USD` (era `PEN`) | Devtools edita request | Recalcular desde el producto |
+| Cambia `productoId` a uno más caro | Devtools edita request | Ownership check + auth de sesión |
+| Cambia `cantidad` a `0` | Devtools edita request | Validar `cantidad >= 1` y `<= maxStock` |
+| Aplica cupón inválido | Devtools edita el body | Validar el cupón contra BD antes de aplicar |
 | Reusa `referenciaExterna` | Reenvío del mismo body | Servicio retorna 409 (anti-replay del Procesador) |
-| Spoofea webhook con monto falso | POST sin firma válida | HMAC SHA-256 + timing-safe comparison + dedup eventId |
+| Spoofea webhook con monto falso | POST sin firma válida | HMAC SHA-256 + timing-safe comparison |
 
-### 2.5 Cuándo NO usar identity `(input) => input`
+### 2.5 Cuándo NO copiar el monto del request
 
-**Nunca en producción real con montos no controlados por backend.** Casos donde podría aceptarse identity:
+**Nunca en producción real con montos no controlados por backend.** El único caso razonable es un monto fijo definido por el backend antes del frontend (por ejemplo, una suscripción mensual de USD 9.99 con `planId` y precio hardcoded server-side). **Aun así: valida `planId` y deriva el monto de una tabla server-side, NO copies el del request.**
 
-- Monto fijo definido por el backend antes del frontend (ej: suscripción mensual de USD 9.99 con `metadata.planId` y precio hardcoded server-side). **Aún así: validar `metadata.planId` y derivar el monto de una tabla server-side, NO copiar el del request.**
-
-Si pasás identity, marcá el código con un `TODO` o documentá la decisión en code review. El SDK NO bloquea la identity — es declaración explícita de intención. Code reviewers que vean `alCrearPago: (input) => input` deben preguntar el porqué.
+Si por alguna razón envías el monto tal cual, documenta la decisión en code review: quien lo vea debe preguntar el porqué.
 
 ### 2.6 Checklist pre-deploy
 
-- [ ] ¿Implementé `alCrearPago` con lookup real (no identity)?
-- [ ] ¿Valido `metadata.productoId` (existe + ownership)?
+- [ ] ¿Recalculo `monto` y `moneda` desde mi BD, no los copio del request?
+- [ ] ¿Valido `productoId` (existe + ownership)?
 - [ ] ¿Valido cupones contra BD antes de aplicar?
-- [ ] ¿Valido `metadata.cantidad >= 1` y `<= maxStock`?
-- [ ] ¿Recalculo `moneda` desde producto, NO copio del request?
-- [ ] ¿Hago validación de `userId` ownership (auth de cookie/JWT)?
-- [ ] ¿Tengo tests de integración con monto manipulado en frontend mock?
-- [ ] ¿Configuré `verificarAcceso` para `/eventos` SSE? (si SSE habilitado)
-- [ ] ¿El `webhookSecret` está en secret manager (no en código)?
-- [ ] ¿Verifiqué el throw del SDK localmente al olvidar `alCrearPago`?
+- [ ] ¿Valido `cantidad >= 1` y `<= maxStock`?
+- [ ] ¿Valido la identidad del usuario (auth de cookie/JWT) antes de crear el pago?
+- [ ] ¿Tengo tests de integración con monto manipulado en un frontend mock?
+- [ ] ¿El secret del webhook y la `apiKey` están en un secret manager (no en código)?
 
-### 2.7 Mensaje exacto del throw
-
-```
-Error: [procesador-pagos-sdk] alCrearPago es OBLIGATORIO para evitar que un atacante manipule monto/moneda desde el frontend. Implementá el hook con lookup en tu BD para recalcular monto canónico. Ver docs/security.md.
-```
-
-Ver `ADR-020 — Security boundary` en `docs/decisions.md` para el threat model completo y las responsabilidades del SDK vs el consumidor.
+Ver `ADR-020 — Security boundary` en `docs/decisions.md` para el razonamiento histórico de este boundary (hoy obsoleto como API, vigente como principio).
 
 ---
 
@@ -174,7 +155,7 @@ Ver `ADR-020 — Security boundary` en `docs/decisions.md` para el threat model 
 | Construction | Header `x-api-key` se setea en el adapter, no es accesible al consumidor. |
 | Error mapping | `mapearErrorHttp` no toca `request.headers`. |
 | Logging | El SDK NUNCA loguea datos sensibles (apiKey, secretKey, body completo de webhooks, contenido de metadata del consumidor). Sí emite mensajes a `console.error`/`console.warn` para errores no recuperables y warnings de configuración explícitamente autorizados — ver [ADR-021 — Política de Logging](decisions.md#adr-021--política-de-logging-del-sdk). |
-| Tests | Regex `/apiKeyTestValue/` debe ser ausente en TODOS los `r.error` de los 113 scenarios. |
+| Tests | Regex `/apiKeyTestValue/` debe ser ausente en los `r.error` de los tests de errores. |
 
 ---
 
@@ -196,7 +177,7 @@ Ver `ADR-020 — Security boundary` en `docs/decisions.md` para el threat model 
 Si el runtime no expone NINGUNA de las dos primitivas nativas, `compararFirmasSeguro` lanza:
 
 ```
-Runtime no soporta timing-safe comparison. Requiere Cloudflare Workers, Vercel Edge, o Node 18+ con nodejs_compat.
+Runtime no soporta timing-safe comparison. Requiere Cloudflare Workers, Vercel Edge, o Node 20+ con nodejs_compat.
 ```
 
 **No hay fallback custom byte-a-byte.** Razón: una implementación custom es vulnerable a optimizaciones del JIT que rompen la propiedad de timing-constant. Mejor rechazar el módulo completo que dar una falsa sensación de seguridad.
@@ -243,35 +224,21 @@ Si el consumidor olvida cancelar, el timeout interno (siempre presente) actúa c
 
 ---
 
-## 6. Build-per-env: imposibilidad de URL change runtime
+## 6. `baseUrl` validada en runtime
 
-### Atque mitigado: MitM via env manipulation
+### Amenaza mitigada: `apiKey` enviada a un destino inseguro o ambiguo
 
-```typescript
-// ❌ Esto NO funciona en este SDK:
-process.env.PAGOS_URL = 'https://evil.com';
-const cliente = crearCliente({ apiKey });
-await cliente.pagos.crearPago(...); // sigue yendo a la URL horneada en build-time
-```
+El SDK no lee `process.env` ni ninguna variable de entorno: el único destino es el `baseUrl` que el consumidor pasa a `crearCliente`. Antes de crear el cliente, `validarBaseUrl` exige:
 
-El SDK NO lee `process.env.PAGOS_URL` ni similar. La URL es un string literal en `dist/index.js` (inlined por `tsdown define`).
+- esquema `https`, o `http` solo si el host es loopback (`localhost`, `127.x.x.x`, `[::1]`);
+- sin credenciales (`usuario:clave@`), sin query, sin fragmento (también se rechazan `?` y `#` vacíos);
+- path igual a `/`: `new URL(path, base)` descarta en silencio el path de la base, así que un path se rechaza en vez de ignorarse.
 
-### Atque mitigado: build mismatch publicado accidentalmente
+Cualquier incumplimiento lanza un `Error` síncrono con prefijo `[procesador-pagos-sdk] baseUrl` que **no incluye el valor recibido** (podría traer credenciales o tokens). La URL se normaliza a `URL.origin`.
 
-`prepublishOnly` corre `typecheck && test:run && build:prod`. Pero `npm publish --ignore-scripts` lo bypassea.
+### Qué NO cubre
 
-**Defensa runtime (ADR-007 / C5)**:
-
-```typescript
-// src/core/config.ts (síncrono al cargar)
-if (__SDK_API_URL__.includes('localhost') && __SDK_BUILD_ENV__ !== 'local') {
-  throw new Error('[procesador-pagos-sdk] Build mismatch: ...');
-}
-```
-
-El consumidor recibe el error al primer `import`. El bundle no carga.
-
-Limitación: NO cubre URLs no-localhost incorrectas (e.g. SDK con URL dev pero env=production). Eso requiere disciplina de release: tag por entorno + lockfile fijado.
+El SDK no puede saber si un `https://...` válido es el servicio correcto: si la configuración de despliegue que alimenta `baseUrl` está comprometida o es incorrecta, la `apiKey` viaja a ese host. Protege esa configuración como protegerías la propia `apiKey`, y usa una `baseUrl` distinta por entorno. Ver [ADR-022](decisions.md#adr-022--baseurl-en-runtime-solo-origin).
 
 ---
 
@@ -309,7 +276,7 @@ const r = await cliente.pagos.crearPago(input, { signal: ctrl.signal });
 
 ### Validar `payload: unknown` con tu propio Zod
 
-`verificarWebhookDesdeRequest` retorna `payload: unknown`. Validá ANTES de usar:
+`verificarWebhookDesdeRequest` retorna `payload: unknown`. Valida ANTES de usar:
 
 ```typescript
 import { z } from 'zod';
@@ -324,9 +291,9 @@ const parsed = payloadSchema.safeParse(r.data.payload);
 if (!parsed.success) return c.json({ error: 'Payload inválido' }, 422);
 ```
 
-### Preferir builds prod en producción
+### Una `baseUrl` por entorno
 
-NO instalar `@eva/procesador-pagos-sdk@local` en producción. La defensa runtime (ADR-007) ya cubre `localhost` mismatch, pero igual: instalar el tag correcto.
+No uses `http://localhost:...` ni la URL de otro entorno en producción: el SDK acepta cualquier origin `https` válido y no puede detectar que apuntas al servicio equivocado. Mantén `baseUrl` en la configuración propia de cada despliegue.
 
 ### Idempotency en webhook handlers
 
@@ -334,14 +301,6 @@ El servicio puede reenviar webhooks (network failures, etc.). Tu handler debe se
 
 ---
 
-## 8. Sanitización SSE (CR/LF) y endpoint `/eventos`
+## 8. Reportar vulnerabilidades
 
-El endpoint `GET /:id/eventos` (SSE) emite campos de control (`event:`, `id:`, `retry:`) cuyos valores podrían venir contaminados con CR/LF. El SDK aplica `sanitizarCampoSSE(valor)` que rechaza con throw si detecta `\r` o `\n` (defensa adicional al fix del CVE-2026-29085 de Hono <4.12.4 — el peer dep ya está bumpeado a `>=4.12.4`).
-
-Auth del endpoint: pasar `verificarAcceso?: (c, pagoId) => boolean | Promise<boolean>` al factory. Si `pubsub` está configurado y `verificarAcceso` no lo está, el SDK emite un `console.warn` advirtiendo que el endpoint queda público (FIX I2 / ADR-019).
-
----
-
-## 9. Reportar vulnerabilidades
-
-(Política interna del ecosistema `@eva/*` — completar con canal de seguridad oficial cuando esté establecido).
+(Pendiente: publicar el canal oficial de reporte de vulnerabilidades.)

@@ -1,17 +1,33 @@
-# Architecture Decision Records (ADRs) — `@eva/procesador-pagos-sdk`
+# Architecture Decision Records (ADRs) — `@eva_solutions/procesador-pagos-sdk`
 
-20 decisiones de arquitectura que definen el SDK. Numeradas en orden cronológico (ADR-001..008 son del MVP v0.1; ADR-009..020 incorporadas en el change `full-stack-checkout` v0.2).
+23 decisiones de arquitectura. Numeradas en orden cronológico (ADR-001..008 del MVP v0.1; ADR-009..021 del change `full-stack-checkout` v0.2; ADR-022 y ADR-023 de la versión 0.3.0).
+
+Los ADRs son **append-only**: una decisión reemplazada no se borra ni se renumera, solo cambia su campo `Estado` y se agrega una nota. Para saber qué rige hoy, usa esta tabla:
+
+| ADR | Tema | Estado hoy |
+|---|---|---|
+| 001 | URL horneada en build-time | Reemplazada por ADR-022 |
+| 002 | Result Pattern | Vigente |
+| 003 | Namespace `cliente.pagos.X` | Vigente |
+| 004 | `compararFirmasSeguro` con primitivas nativas | Vigente (enmienda: Node 20+) |
+| 005 | `iterarPagos` | Vigente |
+| 006 | Overrides del cliente | Vigente; "URL nunca" reemplazado por ADR-022 |
+| 007 | Defensa contra build mismatch | Reemplazada por ADR-022 |
+| 008 | `tsup` → `tsdown` | Vigente (enmienda: sin `define`) |
+| 009..021 | Hono, React, pub/sub, SSE, security boundary, logging | Obsoletas por ADR-023 |
+| 022 | `baseUrl` en runtime, solo origin | Vigente |
+| 023 | Paquete reducido a core + webhooks | Vigente |
 
 ---
 
 ## ADR-001 — URL del servicio horneada en build-time
 
-**Estado**: Accepted.
+**Estado**: Reemplazada por ADR-022 (0.3.0). Estado original: Accepted.
 **Fecha**: 2026-04 (initial).
 
 ### Contexto
 
-El SDK habla a un servicio HTTP. Hay tres entornos: `local` (workers dev local), `development` (staging Cloudflare), `production` (Cloudflare prod).
+El SDK habla a un servicio HTTP. Hay tres entornos: `local`, `development` y `production`.
 
 ### Decisión
 
@@ -19,7 +35,7 @@ La URL del servicio se inyecta en build-time vía `tsdown define` (`__SDK_API_UR
 
 ```typescript
 // build-time
-__SDK_API_URL__ = "https://procesador-de-pagos.workers.dev"; // production
+__SDK_API_URL__ = "https://<host-production>"; // URL de producción (omitida)
 
 // runtime
 crearCliente({ apiKey /* SIN url */ });
@@ -29,9 +45,9 @@ Tres versiones distintas del SDK son publicadas (una por entorno):
 
 | Versión                           | URL inyectada                 |
 | --------------------------------- | ----------------------------- |
-| `@eva/procesador-pagos-sdk@local` | `http://localhost:6000`       |
-| `@eva/procesador-pagos-sdk@dev`   | URL development (placeholder) |
-| `@eva/procesador-pagos-sdk@prod`  | URL production (placeholder)  |
+| `@eva_solutions/procesador-pagos-sdk@local` | `http://localhost:6000`       |
+| `@eva_solutions/procesador-pagos-sdk@dev`   | URL development (placeholder) |
+| `@eva_solutions/procesador-pagos-sdk@prod`  | URL production (placeholder)  |
 
 ### Consecuencias
 
@@ -148,6 +164,8 @@ Algoritmo:
 - (+) Tests inspeccionan el fuente con regex para garantizar que NO hay loop XOR custom.
 - (−) Excluye runtimes legacy sin `subtle.timingSafeEqual` ni `node:crypto`. Aceptable: el SDK declara `engines.node >= 18` y runtimes modernos.
 
+> **Enmienda (0.3.0)**: el SDK declara ahora `engines.node >= 20`; la decisión no cambia.
+
 ---
 
 ## ADR-005 — `iterarPagos` yields `PagoResumen` directo + throws `Error(msg, { cause: Resultado })`
@@ -182,7 +200,7 @@ throw new Error(r.error, { cause: r }); // r es Resultado<never> con codigo + er
 ### Idiom recomendado
 
 ```typescript
-import type { Resultado } from "@eva/procesador-pagos-sdk";
+import type { Resultado } from "@eva_solutions/procesador-pagos-sdk";
 
 try {
   for await (const pago of cliente.pagos.iterarPagos({ estado: "pendiente" })) {
@@ -202,7 +220,7 @@ try {
 
 ## ADR-006 — Overrides `fetch` / `timeout` / `headers` / `signal`; URL nunca
 
-**Estado**: Accepted.
+**Estado**: Accepted, con la restricción "URL nunca" reemplazada por ADR-022 (0.3.0): la URL base es hoy la opción obligatoria `baseUrl`. El resto de la decisión sigue vigente.
 **Fecha**: 2026-04 (initial).
 
 ### Contexto
@@ -237,7 +255,7 @@ try {
 
 ## ADR-007 — Defensa runtime contra build mismatch
 
-**Estado**: Accepted (introducido en auditoría — C5).
+**Estado**: Reemplazada por ADR-022 (0.3.0): sin URL horneada no hay build mismatch posible y el chequeo (`core/config.ts`) fue eliminado. Estado original: Accepted (introducido en auditoría — C5).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -302,6 +320,8 @@ export default defineConfig({
 - (−) Menos maduro que tsup (`^0.7` vs `^8.5`). Mitigación: smoke test `require('./dist/index.cjs')` en `tests/build/define-injection.mock.test.ts`. Si falla, fallback a tsup.
 - (−) Documentación menos extensa. Aceptable: API es mínima.
 
+> **Enmienda (0.3.0)**: la config de `tsdown` ya no usa `define` (ver ADR-022), su única entrada son `index` y `webhooks`, y el smoke test `tests/build/define-injection.mock.test.ts` fue eliminado. La versión de `tsdown` hoy es la declarada en `package.json`.
+
 ### Plan B
 
 Si `tsdown` rompe el CJS output o introduce regression, revertir a:
@@ -318,7 +338,7 @@ y renombrar `tsdown.config.ts` → `tsup.config.ts` (las APIs son compatibles 1:
 
 ## ADR-009 — Vitest projects API + jsdom para widget React
 
-**Estado**: Accepted (full-stack-checkout v0.2 — C2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2 — C2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -342,7 +362,7 @@ Usar `projects: [...]` API de vitest con dos pools:
 
 ## ADR-010 — Adapters pub/sub por interface (memoria + Upstash + DO)
 
-**Estado**: Accepted (full-stack-checkout v0.2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -369,7 +389,7 @@ El consumidor puede implementar su propio adapter (debe pasar el contract test c
 
 ## ADR-011 — Handler `POST /crear` con safeParse + alCrearPago required
 
-**Estado**: Accepted (full-stack-checkout v0.2 + S1.1).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2 + S1.1).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -392,7 +412,7 @@ Flujo: body JSON → `crearPagoInputSchema.safeParse` → `alCrearPago(input, c)
 
 ## ADR-012 — Verificación de webhooks reusa `verificarWebhookDesdeRequest`
 
-**Estado**: Accepted (full-stack-checkout v0.2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -412,7 +432,7 @@ El handler invoca `verificarWebhookDesdeRequest(c.req.raw, opciones.webhookSecre
 
 ## ADR-013 — Hooks de negocio en webhook (await mixto)
 
-**Estado**: Accepted (full-stack-checkout v0.2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -438,7 +458,7 @@ Estrategia mixta:
 
 ## ADR-014 — Dedup eventos por `eventId` SHA-256 con TTL 5 min
 
-**Estado**: Accepted (full-stack-checkout v0.2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -459,7 +479,7 @@ Webhooks pueden duplicarse (red, retry). El SDK debe deduplicar para evitar emit
 
 ## ADR-015 — Componente `<BotonPago>` con render-prop + slots inline + className override
 
-**Estado**: Accepted (full-stack-checkout v0.2 — FIX C3).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2 — FIX C3).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -485,7 +505,7 @@ Render default usa inline styles más default keyframe `sdk-pago-spin` para el s
 
 ## ADR-016 — Hook `useBotonPago` con state machine + AbortController StrictMode tolerante
 
-**Estado**: Accepted (full-stack-checkout v0.2 — FIX M1).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2 — FIX M1).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -505,7 +525,7 @@ React 19 StrictMode monta dos veces componentes en dev. El hook debe ser idempot
 
 ## ADR-017 — Factory acepta args literal o lazy `(env) => opciones`
 
-**Estado**: Accepted (full-stack-checkout v0.2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -530,7 +550,7 @@ Validación S1.1:
 
 ## ADR-018 — Detección DO por marca `Symbol.for` (no `instanceof`)
 
-**Estado**: Accepted (full-stack-checkout v0.2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -539,7 +559,7 @@ Los adapters pub/sub son objetos plain (factories, no clases). `instanceof` no a
 
 ### Decisión
 
-`adapterDurableObjects` agrega la marca `Symbol.for('@eva/procesador-pagos-sdk/adapter-durable-objects')` en el adapter retornado. `esAdapterDurableObjects(adapter)` es type-guard que checkea la marca. Cross-realm safe (gracias a `Symbol.for` global registry).
+`adapterDurableObjects` agrega la marca `Symbol.for('@eva_solutions/procesador-pagos-sdk/adapter-durable-objects')` en el adapter retornado. `esAdapterDurableObjects(adapter)` es type-guard que checkea la marca. Cross-realm safe (gracias a `Symbol.for` global registry).
 
 ### Consecuencias
 
@@ -550,7 +570,7 @@ Los adapters pub/sub son objetos plain (factories, no clases). `instanceof` no a
 
 ## ADR-019 — `verificarAcceso?` opcional con warning si SSE sin auth
 
-**Estado**: Accepted (full-stack-checkout v0.2 — FIX I2).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted (full-stack-checkout v0.2 — FIX I2).
 **Fecha**: 2026-04.
 
 ### Contexto
@@ -573,7 +593,7 @@ El endpoint `GET /:id/eventos` puede leakear el estado de un pago a cualquiera q
 
 ## ADR-020 — Security boundary: alCrearPago obligatorio + responsabilidades
 
-**Estado**: Aceptado (v0.2.0).
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Aceptado (v0.2.0).
 **Fecha**: 2026-04-26.
 
 ### Contexto
@@ -642,7 +662,7 @@ Consumidor que pasa `alCrearPago: (input) => input` (identity) está expuesto a 
 ## ADR-021 — Política de Logging del SDK
 
 **Fecha**: 2026-04-27
-**Estado**: Accepted
+**Estado**: Obsoleta — eliminada por ADR-023 (0.3.0). Estado original: Accepted
 **Erratum sobre v0.2.0** (clarifica contradicciones documentales detectadas post-archive).
 
 ### Contexto
@@ -711,9 +731,72 @@ Considerar agregar callbacks dedicados `onError?: (contexto, error) => void` en 
 
 ---
 
+## ADR-022 — `baseUrl` en runtime, solo origin
+
+**Estado**: Accepted. Reemplaza a ADR-001 y ADR-007, y a la restricción "URL nunca" de ADR-006.
+**Fecha**: 2026-10-09.
+
+### Contexto
+
+ADR-001 horneaba la URL del servicio en el build, lo que implicaba una versión del SDK por entorno y, para no publicar un build equivocado, un chequeo defensivo al cargar el módulo (ADR-007). Publicar un único paquete en npm para todos los entornos es incompatible con una URL fija en el build.
+
+### Decisión
+
+`crearCliente({ apiKey, baseUrl })` recibe la URL del servicio en runtime. `baseUrl` es obligatorio y se valida una sola vez, al construir el cliente:
+
+- Acepta `https`, o `http` solo si el host es loopback (`localhost`, `127.x.x.x`, `[::1]`).
+- Rechaza credenciales, path distinto de `/`, query y fragmento (también `?` y `#` vacíos), esquemas distintos de http/https, valores malformados, vacíos o que no sean string.
+- Se normaliza a `URL.origin` y cada request se construye con `new URL(path, origin)`.
+- **Solo origin**, porque `new URL(path, base)` descarta en silencio el path de la base: aceptarlo haría que un `baseUrl` con prefijo apuntara a otro lado sin avisar, así que se rechaza en vez de ignorarse.
+- Ningún mensaje de error repite el valor recibido (podría traer credenciales o tokens) ni la `apiKey`.
+
+Se eliminan `core/config.ts`, `__SDK_API_URL__`, `__SDK_BUILD_ENV__`, `EVA_PAGOS_BUILD_ENV`, los scripts `build:local|dev|prod` y `pack:local`, y el chequeo de ADR-007.
+
+### Alternativas consideradas
+
+- **Mantener la URL horneada (ADR-001)**: descartada, exige un build y una versión por entorno, incompatible con un único paquete publicado.
+- **Aceptar un `baseUrl` con path y descartarlo**: descartada, el path se perdería en silencio; se rechaza de forma explícita.
+
+(Son las únicas alternativas que constan en el diseño del cambio.)
+
+### Consecuencias
+
+- (+) Un solo artefacto sirve a todos los entornos; desaparecen los builds por entorno y el riesgo de build mismatch.
+- (+) Una `baseUrl` inválida falla al construir el cliente, con un mensaje que no filtra el valor.
+- (−) El destino de las requests ya no lo fija el paquete: la protección que ADR-001 daba contra el desvío por configuración deja de ser del SDK. El SDK solo garantiza una forma válida (https, sin credenciales); que la URL sea la correcta es responsabilidad del consumidor (ver `docs/security.md` §6).
+- (−) Cambio incompatible: quien usaba 0.2.x debe pasar `baseUrl`. Tampoco se pueden usar `baseUrl` con prefijo de path (por ejemplo, detrás de un gateway con prefijo).
+
+---
+
+## ADR-023 — Paquete reducido a core + webhooks
+
+**Estado**: Accepted. Deja obsoletas las ADR-009..021.
+**Fecha**: 2026-10-09.
+
+### Contexto
+
+La versión 0.2.0 sumó cuatro entradas opt-in (`/hono`, `/hono/upstash`, `/hono/durable-objects`, `/react`) sobre las features `rutas-hono`, `pubsub`, `sse-stream` y `widget-react`, con peer deps de `hono`, `react`, `react-dom` y `@upstash/redis`. El único consumidor actual usa solo el core y los webhooks.
+
+### Decisión
+
+Se eliminan esas entradas y features. `package.json#exports` queda con `.` y `./webhooks` (ESM y CJS). Se eliminan también sus peer deps y devDeps de pruebas (`@testing-library/*`, `jsdom`, `@types/react*`), el proyecto `jsdom` de vitest y los tests de esas features. Las ADR-009..021 describen superficies que ya no existen: se conservan como historia, marcadas como obsoletas, sin renumerar.
+
+### Alternativas consideradas
+
+- **Mantener las entradas y publicarlas**: descartada, el único consumidor usa solo core + webhooks (fuente: diseño del cambio).
+
+### Consecuencias
+
+- (+) Menos superficie pública y sin peer deps.
+- (−) Cambio incompatible para quien importaba las entradas eliminadas: debe implementar sus propias rutas, pub/sub y UI sobre `cliente.pagos` y `verificarWebhookDesdeRequest`.
+- (−) Desaparece el `throw` obligatorio de `alCrearPago` (ADR-020): la validación server-side del monto es responsabilidad exclusiva del consumidor (ver `docs/security.md` §2).
+- (−) El SDK deja de emitir logs: la política de ADR-021 describe superficies eliminadas. El código actual no contiene llamadas a `console.*`.
+
+---
+
 ## Apéndice: UX final aprobada (referencia)
 
-Ver `engram://sdd/bootstrap-mvp/ux-final` (#1372) para los 9 patrones UX aprobados con `dave`:
+Los 9 patrones UX aprobados:
 
 - **UX-1**: namespace agrupado `cliente.pagos.X`.
 - **UX-2**: alias `createClienteProcesadorPagos`.
@@ -740,5 +823,5 @@ Ver `engram://sdd/bootstrap-mvp/ux-final` (#1372) para los 9 patrones UX aprobad
 - **C2**: `401` para fallas auth/firma/secretKey, `422` para body no-JSON post-firma-OK y body ya consumido.
 - **C3**: `iterarPagos` yields `PagoResumen` directo + throws `Error(msg, { cause: Resultado })` (ADR-005).
 - **C4**: `compararFirmasSeguro` con primitivas nativas, fail-closed (ADR-004).
-- **C5**: defensa runtime contra build mismatch (ADR-007).
+- **C5**: defensa runtime contra build mismatch (ADR-007; eliminada, ver ADR-022).
 - **C6**: SDK NO valida tamaño metadata localmente (servicio responde 413).

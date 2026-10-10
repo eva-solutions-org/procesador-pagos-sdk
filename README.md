@@ -1,21 +1,21 @@
-# 💳 @eva/procesador-pagos-sdk
+# 💳 @eva_solutions/procesador-pagos-sdk
 
-SDK TypeScript para consumir el servicio Procesador-de-pagos. Diseñado para ser **extremadamente simple por defecto** con control avanzado opcional.
+SDK TypeScript para consumir el servicio Procesador-de-pagos. Diseñado para ser **simple por defecto** con control avanzado opcional.
 
 ### 🎯 Características
 
 ```
-✓ Runtime targets   Node 18+, Cloudflare Workers, Vercel Edge
+✓ Runtime targets   Node 20+, Cloudflare Workers, Vercel Edge
 ✓ Seguridad        apiKey nunca expuesta (backend only)
 ✓ Error Handling   Result Pattern — nunca lanza errores de negocio
-✓ Config           URL en build-time, zero runtime surprises
+✓ Config           baseUrl en runtime: un solo paquete para todos los entornos
 ✓ Webhooks         HMAC-SHA256 timing-safe
 ✓ Dependencies     Zod, nada más
 ```
 
 **No browser** — la `apiKey` es secreta y debe estar en el servidor.
 
-**Versión actual:** `0.2.0` | **Testeado contra:** `380874771a21b56bd42f1db23c60627c62209327`
+**Licencia:** MIT. **Versiones y cambios:** ver [CHANGELOG.md](./CHANGELOG.md).
 
 ### 🗺️ Mapa rápido
 
@@ -23,29 +23,35 @@ SDK TypeScript para consumir el servicio Procesador-de-pagos. Diseñado para ser
 flowchart LR
   A[Tu backend o edge runtime] --> B[crearCliente]
   B --> C[cliente.pagos]
-  B --> D[@eva/procesador-pagos-sdk/webhooks]
+  B --> D[@eva_solutions/procesador-pagos-sdk/webhooks]
   C --> E[Servicio Procesador-de-pagos]
   D --> F[Verificación HMAC-SHA256]
 ```
+
+El paquete expone dos entradas: `@eva_solutions/procesador-pagos-sdk` (cliente y tipos) y `@eva_solutions/procesador-pagos-sdk/webhooks` (verificación de firmas). Ambas existen en ESM y CJS.
 
 ---
 
 ## 📦 Instalación
 
 ```bash
-pnpm add @eva/procesador-pagos-sdk
+pnpm add @eva_solutions/procesador-pagos-sdk
+# o: npm install @eva_solutions/procesador-pagos-sdk
 ```
 
-> Requiere Node 18+ o un runtime con `fetch`, `AbortSignal.any`, `AbortSignal.timeout`, y `crypto.subtle`.
+> Requiere Node 20+ o un runtime con `fetch`, `AbortSignal.any`, `AbortSignal.timeout` y `crypto.subtle`.
 
 ---
 
-## ⚡ Quickstart (zero-config)
+## ⚡ Quickstart
 
 ```typescript
-import { crearCliente } from "@eva/procesador-pagos-sdk";
+import { crearCliente } from "@eva_solutions/procesador-pagos-sdk";
 
-const cliente = crearCliente({ apiKey: process.env.EVA_PAGOS_API_KEY! });
+const cliente = crearCliente({
+  apiKey: process.env.EVA_PAGOS_API_KEY!,
+  baseUrl: process.env.EVA_PAGOS_BASE_URL!, // origin del servicio, ej. https://pagos.example.com
+});
 
 const resultado = await cliente.pagos.crearPago({
   monto: "150.00",
@@ -62,127 +68,64 @@ if (!resultado.success) {
 console.log("Pago creado:", resultado.data.pagoId);
 ```
 
----
-
-## 🔒 Seguridad obligatoria (full-stack checkout v0.2)
-
-> Si usás el entry `@eva/procesador-pagos-sdk/hono` (helper `rutasPagos()`), el SDK te fuerza a implementar el hook `alCrearPago` con un **throw síncrono al construir el factory**. Si lo olvidás, tu servicio no arranca.
-
-**Razón**: el frontend (`<BotonPago>`) no es trusted. Cualquier valor que viaja desde el browser (`monto`, `moneda`, `metadata`) puede ser manipulado desde devtools. El servidor del consumidor debe recalcular el monto canónico desde su BD usando un identificador confiable (típicamente `metadata.productoId`).
-
-### Lo que ves si olvidás `alCrearPago`
-
-```
-Error: [procesador-pagos-sdk] alCrearPago es OBLIGATORIO para evitar que un atacante manipule monto/moneda desde el frontend. Implementá el hook con lookup en tu BD para recalcular monto canónico. Ver docs/security.md.
-```
-
-### Snippet del patrón seguro
-
-```typescript
-import { rutasPagos } from "@eva/procesador-pagos-sdk/hono";
-
-app.route(
-  "/pagos",
-  rutasPagos({
-    apiKey: process.env.PROCESADOR_API_KEY!,
-    webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
-    alCrearPago: async (input, c) => {
-      const producto = await db.productos.findById(input.metadata.productoId);
-      if (!producto) throw new Error("Producto no encontrado");
-      return {
-        ...input,
-        monto: (producto.precio / 100).toFixed(2),
-        moneda: producto.moneda,
-      };
-    },
-  }),
-);
-```
-
-### Caso "no necesito validación" (escape hatch documentado)
-
-```typescript
-// Solo aceptable si el monto ya viene controlado por backend (raro):
-alCrearPago: (input) => input;
-```
-
-> Esto es declaración explícita de intención. Code review verá `(input) => input` y preguntará. **NO usar en producción** si el monto viene de fuente no confiable.
-
-Ver [docs/security.md](./docs/security.md) para el threat model completo, ejemplo INSEGURO vs SEGURO, tabla de manipulaciones y checklist pre-deploy. Ver [ADR-020](./docs/decisions.md) para el security boundary y responsabilidades SDK vs consumidor.
+`apiKey` y `baseUrl` son obligatorios. Si falta alguno o `baseUrl` no es válida, `crearCliente` lanza un `Error` síncrono al construirse (los mensajes nunca incluyen sus valores).
 
 ---
 
-## ⚡ Quickstart full-stack (Hono + React)
+## 🔒 Seguridad del monto
 
-Para el flujo completo (botón en frontend → checkout en backend → SSE/polling de eventos), el SDK expone 4 entries opt-in:
-
-```typescript
-// Backend Node — opciones literales
-import { Hono } from "hono";
-import { rutasPagos, adapterMemoria } from "@eva/procesador-pagos-sdk/hono";
-
-const app = new Hono();
-app.route(
-  "/pagos",
-  rutasPagos({
-    apiKey: process.env.PROCESADOR_API_KEY!,
-    webhookSecret: process.env.PROCESADOR_WEBHOOK_SECRET!,
-    alCrearPago: async (input) => input, // implementá tu lookup acá
-    pubsub: adapterMemoria(),
-  }),
-);
-```
+El navegador no es de confianza: cualquier `monto` o `moneda` que llegue desde el frontend puede ser manipulado desde devtools. **Calcula el monto en tu servidor** desde tu base de datos (con un identificador confiable como `productoId`) antes de llamar a `crearPago`:
 
 ```typescript
-// Backend Cloudflare Workers — opciones lazy `(env) => opciones`
-import { rutasPagos } from "@eva/procesador-pagos-sdk/hono";
-import { adapterDurableObjects, SSEHub } from "@eva/procesador-pagos-sdk/hono/durable-objects";
+const producto = await db.productos.findById(body.productoId);
+if (!producto) return c.json({ error: "Producto no encontrado" }, 404);
 
-export { SSEHub };
-
-const app = new Hono<{ Bindings: { SSE_HUB: DurableObjectNamespace; API_KEY: string; WEBHOOK_SECRET: string } }>();
-app.route(
-  "/pagos",
-  rutasPagos((env) => ({
-    apiKey: env.API_KEY,
-    webhookSecret: env.WEBHOOK_SECRET,
-    alCrearPago: async (input) => input,
-    pubsub: adapterDurableObjects({ binding: env.SSE_HUB }),
-  })),
-);
+const r = await cliente.pagos.crearPago({
+  monto: (producto.precio / 100).toFixed(2),
+  moneda: producto.moneda,
+  tipo: "pago_unico",
+  referenciaExterna: body.referenciaExterna,
+});
 ```
 
-```tsx
-// Frontend React
-import { BotonPago } from "@eva/procesador-pagos-sdk/react";
+Ver [docs/security.md](./docs/security.md) para el modelo de amenazas, el ejemplo INSEGURO vs SEGURO, la tabla de manipulaciones y el checklist pre-deploy.
 
-export function Checkout() {
-  return (
-    <BotonPago
-      monto="100.00"
-      moneda="USD"
-      referenciaExterna="orden-42"
-      metadata={{ productoId: 7 }}
-      widgetId={import.meta.env.VITE_PROMETEO_WIDGET_ID}
-      onCompletado={(pago) => console.log("OK", pago)}
-    />
-  );
-}
-```
+---
 
-Ver [docs/api.md](./docs/api.md), [docs/configuration.md](./docs/configuration.md) y [docs/architecture.md](./docs/architecture.md) para el detalle.
+## 🌐 `baseUrl`: qué se acepta
+
+`baseUrl` es el **origin** del servicio y se valida una sola vez, al llamar a `crearCliente`. Se normaliza a `URL.origin` (por ejemplo, `https://pagos.example.com/` queda como `https://pagos.example.com`).
+
+| Se acepta | Ejemplo |
+| --- | --- |
+| `https` con host y puerto opcional | `https://pagos.example.com`, `https://pagos.example.com:8443` |
+| `http` solo en loopback | `http://localhost:6000`, `http://127.0.0.1:6000`, `http://[::1]:6000` |
+
+| Se rechaza | Ejemplo |
+| --- | --- |
+| Ausente, vacía o no string | `undefined`, `""` |
+| URL malformada | `not a url` |
+| `http` fuera de loopback | `http://pagos.example.com` |
+| Otros esquemas | `ftp://host` |
+| Credenciales | `https://usuario:clave@host` |
+| Path distinto de `/` | `https://host/v1` |
+| Query (incluso `?` vacío) | `https://host?x=1` |
+| Fragmento (incluso `#` vacío) | `https://host#f` |
+
+Un path se rechaza en vez de ignorarse porque `new URL(path, base)` descarta en silencio el path de la base. Ningún mensaje de error repite el valor recibido. Detalle y razones en [ADR-022](./docs/decisions.md#adr-022--baseurl-en-runtime-solo-origin).
 
 ---
 
 ## 🔧 Configuración avanzada (opcional)
 
-Todo es opt-in. Si no especificás nada, el SDK usa defaults razonables.
+Además de `apiKey` y `baseUrl` (obligatorios), todo es opt-in. Si no especificas nada, el SDK usa defaults razonables.
 
 ```typescript
 const ctrl = new AbortController();
 
 const cliente = crearCliente({
   apiKey: process.env.EVA_PAGOS_API_KEY!,
+  baseUrl: process.env.EVA_PAGOS_BASE_URL!,
   timeout: 15_000, // ms — default 10_000, rango 0..Number.MAX_SAFE_INTEGER
   headers: { "x-trace-id": "t-42" }, // headers extra (los internos ganan ante colisión)
   fetch: globalThis.fetch, // override para tests, custom retry layer, etc.
@@ -192,7 +135,7 @@ const cliente = crearCliente({
 // `ctrl.abort()` cancela cualquier request HTTP que el cliente esté ejecutando.
 ```
 
-URL base, prefijo `x-api-key`, mapeo de errores HTTP — **no son configurables** por diseño (ver ADR-001 / ADR-006).
+El prefijo del header `x-api-key` y el mapeo de errores HTTP **no son configurables** por diseño (ver ADR-006). La URL del servicio sí: se pasa como `baseUrl` (ver ADR-022).
 
 ---
 
@@ -273,7 +216,7 @@ console.log(`Página ${r.data.pagination.page}/${r.data.pagination.totalPages}`)
 `iterarPagos` es la **única excepción** al Result Pattern: yields `PagoResumen` directo y lanza `Error` con `cause: Resultado` si la I/O falla. Patrón idiomático Stripe-node / AWS SDK v3 / Octokit (ver ADR-005).
 
 ```typescript
-import type { Resultado } from "@eva/procesador-pagos-sdk";
+import type { Resultado } from "@eva_solutions/procesador-pagos-sdk";
 
 try {
   for await (const pago of cliente.pagos.iterarPagos({ estado: "pendiente" })) {
@@ -301,10 +244,10 @@ await cliente.pagos.reembolsarPago({ id: "pago-123", monto: "50.00" });
 
 ### 6. Webhooks — Hono + Cloudflare Workers (idiomático C1)
 
-En Hono `c.req.raw` ya pudo haber sido leído por middleware. Pasá el body explícito para evitar el `TypeError` de `request.text()` post-consumo.
+En Hono `c.req.raw` ya pudo haber sido leído por middleware. Pasa el body explícito para evitar el `TypeError` de `request.text()` post-consumo.
 
 ```typescript
-import { verificarWebhookDesdeRequest } from "@eva/procesador-pagos-sdk/webhooks";
+import { verificarWebhookDesdeRequest } from "@eva_solutions/procesador-pagos-sdk/webhooks";
 
 app.post("/webhooks/pagos", async (c) => {
   const body = await c.req.text(); // primero leemos
@@ -318,7 +261,7 @@ app.post("/webhooks/pagos", async (c) => {
     return c.json({ error: r.error }, r.codigo);
   }
 
-  // r.data.payload es unknown — validá con tu propio Zod schema.
+  // r.data.payload es unknown — valida con tu propio Zod schema.
   await procesarPayload(r.data.payload);
   return c.json({ recibido: true });
 });
@@ -326,7 +269,7 @@ app.post("/webhooks/pagos", async (c) => {
 
 ### 7. Webhooks — framework-agnostic (request virgen)
 
-Si tu framework NO consumió el body, omitís `options.body` y el SDK llama `request.text()` por dentro:
+Si tu framework NO consumió el body, omites `options.body` y el SDK llama `request.text()` por dentro:
 
 ```typescript
 const r = await verificarWebhookDesdeRequest(request, process.env.SECRET!);
@@ -340,7 +283,7 @@ if (!r.success) {
 ### 8. Webhooks — primitive de bajo nivel
 
 ```typescript
-import { verificarFirmaWebhook } from "@eva/procesador-pagos-sdk/webhooks";
+import { verificarFirmaWebhook } from "@eva_solutions/procesador-pagos-sdk/webhooks";
 
 const r = await verificarFirmaWebhook({
   body: rawBody, // string | Uint8Array
@@ -373,7 +316,7 @@ type Resultado<T> =
 Helpers narrow:
 
 ```typescript
-import { esExitoso, esFallido } from "@eva/procesador-pagos-sdk";
+import { esExitoso, esFallido } from "@eva_solutions/procesador-pagos-sdk";
 
 if (esExitoso(r)) {
   console.log(r.data);
@@ -406,30 +349,69 @@ Cliente global (signal en crearCliente)
 
 ---
 
-## 🔨 Configuración de build (contribuidores)
+## 🔨 Desarrollo (contribuidores)
 
-Variables de entorno **al construir el SDK** (no al consumirlo):
-
-| Variable              | Valores                              | Default            |
-| --------------------- | ------------------------------------ | ------------------ |
-| `EVA_PAGOS_BUILD_ENV` | `local`, `development`, `production` | `local` (con warn) |
-
-Scripts:
+Requisitos: Node 20+ y pnpm `11.28.2` (declarado en `packageManager`).
 
 ```bash
-pnpm install
-pnpm build:local      # __SDK_API_URL__ = http://localhost:6000
-pnpm build:dev        # __SDK_API_URL__ = https://procesador-de-pagos-dev.workers.dev (placeholder)
-pnpm build:prod       # __SDK_API_URL__ = https://procesador-de-pagos.workers.dev   (placeholder)
+pnpm install --frozen-lockfile
+pnpm build         # tsdown: dist/ con ESM + CJS para "." y "./webhooks"
 pnpm typecheck
-pnpm test:run
 pnpm lint
-pnpm pack:local
+pnpm test:run
+pnpm format        # oxfmt
+pnpm changeset     # registra un cambio para el próximo release
 ```
 
-> Las URLs de `dev` y `prod` son **placeholders** hasta que el equipo de plataforma confirme las definitivas. Ver `docs/configuration.md`.
+El artefacto es el mismo para todos los entornos: no hay variables de entorno de build ni build por entorno.
 
-Defensa runtime (ADR-007 / C5): si el bundle final apunta a `localhost` pero `__SDK_BUILD_ENV__` no es `'local'`, el módulo **lanza síncronicamente al cargar**. Es la última línea contra publicar un build mismatch.
+> `pnpm-workspace.yaml` declara `allowBuilds: esbuild: true`. pnpm 11 no ejecuta los scripts de instalación de dependencias sin aprobación explícita y `pnpm install` falla con `ERR_PNPM_IGNORED_BUILDS`; esa entrada aprueba solo a `esbuild`.
+
+> Si tu pnpm local no coincide con `packageManager`, usa `npx --yes pnpm@11.28.2 <comando> --config.pm-on-fail=ignore` (la bandera va después del subcomando).
+
+---
+
+## 🚀 Publicación (mantenedores)
+
+Los releases salen de GitHub Actions con [Changesets](https://github.com/changesets/changesets): cada cambio publicable lleva un archivo en `.changeset/`; al llegar a `main`, el workflow `release.yml` abre un "Version PR" y, al mergearlo, publica en npm con provenance.
+
+`[AUTH]` marca una acción externa o irreversible (push, PR, merge, secretos, publicación en npm): requiere autorización explícita del mantenedor **para esa acción**; no se encadenan ni se automatizan.
+
+### Flujo normal
+
+1. `pnpm changeset` y commitea el archivo generado junto con el cambio.
+2. Merge a `main` `[AUTH]`: `release.yml` abre (o actualiza) el Version PR.
+3. Revisa el Version PR y mergéalo `[AUTH]`: publica la versión y crea el GitHub Release.
+4. Verifica: `npm view @eva_solutions/procesador-pagos-sdk version`.
+
+> **Los Version PR no disparan CI.** Los PR abiertos con el `GITHUB_TOKEN` del workflow no inician otros workflows. Por eso `main` no debe exigir status checks obligatorios; si quieres CI sobre un Version PR, ciérralo y reábrelo.
+
+### Primera publicación (una sola vez)
+
+Condiciones previas, `[AUTH]` cada una:
+
+1. Ser miembro/owner del scope npm `eva_solutions` (`npm org ls eva_solutions`).
+2. Crear el repo público **vacío** `eva-solutions-org/procesador-pagos-sdk` (sin README, licencia ni `.gitignore`) y habilitar, en la organización y luego en el repo, "Allow GitHub Actions to create and approve pull requests" (la organización puede bloquear la casilla del repo).
+3. No configurar status checks ni rulesets obligatorios sobre `main`.
+4. Publicar `main` con un único commit raíz: `git push -u origin main`; comprueba que `git rev-parse --abbrev-ref --symbolic-full-name "@{upstream}"` devuelve `origin/main` y que `git rev-list --count origin/main` es `1`.
+5. Antes de mergear el Version PR, el CI de `ci.yml` disparado por ese push debe estar en verde.
+
+Publicación inicial con token (el paquete aún no existe, así que no se puede configurar trusted publishing):
+
+1. Crea en npmjs.com un token granular: expiración 7 días, lectura y escritura sobre el scope `eva_solutions`, con "Bypass 2FA" `[AUTH]`.
+2. Guárdalo como secreto `NPM_TOKEN` del repo desde la UI de GitHub o con `gh secret set NPM_TOKEN` y el valor escrito en el prompt interactivo `[AUTH]`. Nunca en argumentos, archivos, logs ni chats.
+3. Mergea el Version PR (`0.3.0`) `[AUTH]` y confirma `npm view @eva_solutions/procesador-pagos-sdk@0.3.0 version`.
+
+### Cambio a trusted publishing (dentro de los 2 días siguientes)
+
+1. En npmjs.com, configura el trusted publisher del paquete `[AUTH]`: organización `eva-solutions-org`, repo `procesador-pagos-sdk`, workflow `release.yml`, **sin** environment.
+2. Abre un PR `[AUTH]` que quita de `release.yml` la línea `NPM_TOKEN: ${{ secrets.NPM_TOKEN }}` y su comentario, con un changeset `patch`. Mergéalo `[AUTH]` y mergea el Version PR resultante (`0.3.1`) `[AUTH]`.
+3. Comprueba que el log del workflow dice "No NPM_TOKEN found, but OIDC is available" y que npmjs.com muestra provenance en `0.3.1`. Si falla, **no** revoques el token todavía.
+4. Solo tras esa verificación: revoca el token en npm y borra el secreto `NPM_TOKEN` `[AUTH]`.
+
+Si la confianza caduca o falla: borra y vuelve a crear la configuración del trusted publisher `[AUTH]` y publica por OIDC con otro PR `patch`; no hace falta un token porque el paquete ya existe.
+
+Referencias: `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `.changeset/config.json`.
 
 ---
 
@@ -439,9 +421,9 @@ Defensa runtime (ADR-007 / C5): si el bundle final apunta a `localhost` pero `__
 | ----------------------- | ----------------------------------------------------------------------- |
 | `docs/architecture.md`  | Capas, flujo HTTP, flujo webhook (mermaid).                             |
 | `docs/api.md`           | Referencia completa de la API pública.                                  |
-| `docs/configuration.md` | Setup consumidor + contribuidor, build-per-env.                         |
+| `docs/configuration.md` | Setup consumidor (`baseUrl`) y contribuidor, runtimes.                  |
 | `docs/conventions.md`   | Naming, paradigma funcional, Result Pattern, imports.                   |
-| `docs/decisions.md`     | 20 ADRs (ADR-001 a ADR-020).                                            |
+| `docs/decisions.md`     | 23 ADRs (ADR-001 a ADR-023); ADR-022 y ADR-023 definen la forma actual. |
 | `docs/security.md`      | Modelo de amenazas, política `apiKey nunca en error`, HMAC fail-closed. |
 | `CHANGELOG.md`          | SemVer + Conventional Commits.                                          |
 
@@ -449,4 +431,4 @@ Defensa runtime (ADR-007 / C5): si el bundle final apunta a `localhost` pero `__
 
 ## 📄 Licencia
 
-Ver [`LICENSE`](./LICENSE).
+MIT © EVA Solutions. Ver [`LICENSE`](./LICENSE).

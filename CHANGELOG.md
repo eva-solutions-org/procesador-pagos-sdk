@@ -1,7 +1,5 @@
 # Changelog
 
-Todas las versiones siguen [SemVer](https://semver.org/) y los mensajes de commit siguen [Conventional Commits](https://www.conventionalcommits.org/).
-
 ## [0.2.0] — 2026-04-25
 
 ### Added (full-stack-checkout)
@@ -27,10 +25,10 @@ Todas las versiones siguen [SemVer](https://semver.org/) y los mensajes de commi
 
 ### Verified against
 
-- Servicio Procesador-de-pagos commit `380874771a21b56bd42f1db23c60627c62209327`.
+- Servicio Procesador-de-pagos (versión verificada omitida en este changelog).
 - Hono `^4.12.15` (>=4.12.4 requerido por security CVE).
 - React `^19.2.5` (peer dep optional).
-- Auditoría 1 abogado-del-diablo cerrada con 10 fixes (C1-C4 + I1-I3 + M1-M3) + Fix S1 (5 sub-fixes Security).
+- Auditoría 1 cerrada con 10 fixes (C1-C4 + I1-I3 + M1-M3) + Fix S1 (5 sub-fixes Security).
 
 ## [0.1.0] — 2026-04-25
 
@@ -58,14 +56,13 @@ Todas las versiones siguen [SemVer](https://semver.org/) y los mensajes de commi
   - `README.md` (quickstart + 8 snippets validados).
   - `docs/{architecture,api,configuration,conventions,decisions,security}.md`.
   - `CHANGELOG.md`.
-- **Skills internas** (`.claude/skills/{gobernanza,arquitectura,sdk-dev,sdk-security,configuracion,decisiones}/SKILL.md`).
 
 ### Verified against
 
-- Servicio Procesador-de-pagos commit `380874771a21b56bd42f1db23c60627c62209327`.
-- Constantes `ESTADOS_PAGO` (9), `TIPOS_PAGO` (3), `METODOS_PAGO = ['transfer','qr']` (verificado en `src/features/pagos/domain/tipos-pago.ts:21`).
-- Status 201 en POST `/api/v1/pagos` (verificado en `src/routes/v1-router.ts`).
-- Prefijo `sha256=` lowercase + `bytesToHex` lowercase (verificado en `src/features/callbacks/application/enviar-callback-service.ts:259` + `src/core/crypto/hmac.ts`).
+- Servicio Procesador-de-pagos (versión verificada omitida en este changelog).
+- Constantes `ESTADOS_PAGO` (9), `TIPOS_PAGO` (3), `METODOS_PAGO = ['transfer','qr']` (verificado contra el servicio).
+- Status 201 en POST `/api/v1/pagos`.
+- Prefijo `sha256=` lowercase + hex lowercase en la firma del webhook.
 
 ### Runtime targets
 
@@ -73,3 +70,7 @@ Todas las versiones siguen [SemVer](https://semver.org/) y los mensajes de commi
 - Cloudflare Workers (con flag `nodejs_compat`)
 - Vercel Edge Runtime
 - **NO browser** (la `apiKey` es secreta).
+
+---
+
+Todas las versiones siguen [SemVer](https://semver.org/) y los mensajes de commit siguen [Conventional Commits](https://www.conventionalcommits.org/).
