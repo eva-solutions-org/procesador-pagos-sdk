@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { crearCliente } from "../../../src/index.js";
-import { crearMockFetch, respuestaError, respuestaJsonData } from "../../helpers/mock-fetch.js";
+import { BASE_URL_PRUEBA, crearMockFetch, respuestaError, respuestaJsonData } from "../../helpers/mock-fetch.js";
 import {
   API_KEY_TEST,
   CREAR_PAGO_RESPONSE_FIXTURE,
@@ -16,7 +16,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
     const fetchMock = crearMockFetch(() =>
       respuestaJsonData(CREAR_PAGO_RESPONSE_FIXTURE, { status: 201 }),
     );
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
 
     const r = await cliente.pagos.crearPago(inputCrearPagoValido());
     expect(r.success).toBe(true);
@@ -43,7 +43,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
 
   it("Given monto formato inválido Then 400 sin tocar red", async () => {
     const fetchMock = vi.fn() as unknown as typeof globalThis.fetch;
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.crearPago({
       monto: "150.5",
       moneda: "USD",
@@ -57,7 +57,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
 
   it("Given moneda no-3-chars Then 400 sin tocar red", async () => {
     const fetchMock = vi.fn() as unknown as typeof globalThis.fetch;
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.crearPago({
       monto: "150.00",
       moneda: "US",
@@ -70,7 +70,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
 
   it("Given tipo fuera enum Then 400 sin tocar red", async () => {
     const fetchMock = vi.fn() as unknown as typeof globalThis.fetch;
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.crearPago({
       monto: "150.00",
       moneda: "USD",
@@ -83,7 +83,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
 
   it("Given 409 por conflicto de negocio Then retorna mensaje genérico de 409", async () => {
     const fetchMock = crearMockFetch(() => respuestaError(409, "ReferenciaExterna duplicada"));
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.crearPago(inputCrearPagoValido());
     if (!r.success) {
       expect(r.codigo).toBe(409);
@@ -97,7 +97,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
       urlLlamada = url;
       return respuestaError(413, "Payload too large");
     });
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const metadata: Record<string, string> = {};
     for (let i = 0; i < 1000; i++) {
       metadata[`key${String(i)}`] = "a".repeat(50);
@@ -119,7 +119,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
       return respuestaJsonData(CREAR_PAGO_RESPONSE_FIXTURE, { status: 201 });
     }) as unknown as typeof globalThis.fetch;
 
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.crearPago(inputCrearPagoValido(), { signal: ctrl.signal });
     expect(r.success).toBe(false);
     if (!r.success) expect(r.codigo).toBe(503);
@@ -131,7 +131,7 @@ describe("crearPago — REQ-PAGOS-001 (C6 + I8)", () => {
       bodyEnviado = JSON.parse(init.body as string) as unknown;
       return respuestaJsonData(CREAR_PAGO_RESPONSE_FIXTURE, { status: 201 });
     });
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     await cliente.pagos.crearPago({
       monto: "150.00",
       moneda: "usd",

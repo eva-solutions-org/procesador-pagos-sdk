@@ -4,13 +4,16 @@ import { vi } from 'vitest';
  * Construye un mock de `fetch` que retorna una `Response` ad-hoc por llamada.
  *
  * Útil para los tests `.mock.test.ts` donde queremos verificar:
- *   - URL llamada (incluyendo `__SDK_API_URL__` inyectado).
+ *   - URL llamada (origin `BASE_URL_PRUEBA` + path).
  *   - Headers (`x-api-key`, `Content-Type`, headers extra).
  *   - Body (JSON serializado del input).
  *   - Signal propagado (instancia AbortSignal final pasada a `init`).
  *
  * El handler recibe `(url, init)` y retorna la `Response` deseada.
  */
+/** Origin de pruebas pasado como `baseUrl` (loopback http permitido por la validación). */
+export const BASE_URL_PRUEBA = 'http://localhost:6000';
+
 export interface MockFetchHandler {
   (url: string, init: RequestInit): Promise<Response> | Response;
 }

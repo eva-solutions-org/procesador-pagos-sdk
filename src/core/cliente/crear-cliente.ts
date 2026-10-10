@@ -1,20 +1,22 @@
 import { crearFacadePagos } from '../../features/pagos/index.js';
 import type { FacadePagos } from '../../features/pagos/index.js';
 import { crearHttpClient } from '../http-client/index.js';
+import { validarBaseUrl } from './validar-base-url.js';
 
 /**
  * Opciones de `crearCliente` (UX-5 + I5).
  *
  * - `apiKey`: requerido, string no vacío. Valor NUNCA aparece en mensajes de error.
+ * - `baseUrl`: requerido, origin del servicio (`https://host[:puerto]`; `http` solo en
+ *   loopback). Sin credenciales, path, query ni fragmento. Se valida al crear el cliente.
  * - `timeout`: ms para `AbortSignal.timeout()` interno (default 10_000).
  * - `headers`: headers extra del consumidor; mergean con internos en lowercase.
  * - `fetch`: override (OTel / Datadog / tracing). Default `globalThis.fetch`.
  * - `signal`: AbortSignal **global** del cliente (I5). Cancela todas las ops en vuelo.
- *
- * URL del servicio NUNCA es overridable en runtime — solo build-time vía `tsdown define`.
  */
 export interface OpcionesCliente {
   apiKey: string;
+  baseUrl: string;
   timeout?: number;
   headers?: Record<string, string>;
   fetch?: typeof globalThis.fetch;
@@ -34,9 +36,10 @@ const esTimeoutValido = (timeout: number): boolean => {
 /**
  * Factory principal del SDK. Retorna cliente con namespace `pagos`.
  *
- * Throw síncrono si `apiKey` no es string no vacío. Es ÚNICA excepción
- * permitida fuera de async iterators — error de programación, no flujo
- * de negocio. El mensaje del throw NUNCA incluye el valor de `apiKey`.
+ * Throw síncrono si `apiKey` no es string no vacío o `baseUrl` no es un origin
+ * válido. Son las ÚNICAS excepciones permitidas fuera de async iterators — error
+ * de programación, no flujo de negocio. Los mensajes del throw NUNCA incluyen el
+ * valor de `apiKey` ni de `baseUrl`.
  */
 export const crearCliente = (opciones: OpcionesCliente): ClienteProcesadorPagos => {
   if (
@@ -49,6 +52,8 @@ export const crearCliente = (opciones: OpcionesCliente): ClienteProcesadorPagos 
     throw new Error('[procesador-pagos-sdk] apiKey es requerido y debe ser string no vacío');
   }
 
+  const baseUrl = validarBaseUrl(opciones.baseUrl);
+
   const timeout = opciones.timeout ?? 10_000;
   if (typeof timeout !== 'number' || !esTimeoutValido(timeout)) {
     throw new Error(
@@ -58,6 +63,7 @@ export const crearCliente = (opciones: OpcionesCliente): ClienteProcesadorPagos 
 
   const httpClient = crearHttpClient({
     apiKey: opciones.apiKey,
+    baseUrl,
     timeout,
     headersExtra: opciones.headers,
     fetchImpl: opciones.fetch ?? globalThis.fetch,

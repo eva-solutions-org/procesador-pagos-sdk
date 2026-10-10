@@ -37,8 +37,4 @@ export default defineConfig({
       },
     ],
   },
-  define: {
-    __SDK_API_URL__: JSON.stringify("http://localhost:6000"),
-    __SDK_BUILD_ENV__: JSON.stringify("local"),
-  },
 });

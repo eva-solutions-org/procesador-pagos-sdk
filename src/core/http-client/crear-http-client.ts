@@ -1,5 +1,4 @@
 import type { ZodType } from 'zod';
-import { SDK_API_URL } from '../config.js';
 import type { Resultado } from '../types/result.js';
 import {
   mapearErrorAbortExterno,
@@ -14,6 +13,7 @@ import {
  * Opciones del factory `crearHttpClient`.
  *
  * - `apiKey`: string no vacío. Se envía como header `x-api-key` en cada request.
+ * - `baseUrl`: origin ya validado (`validarBaseUrl`); las rutas se resuelven contra él.
  * - `timeout`: ms para `AbortSignal.timeout()` interno (default 10_000).
  * - `headersExtra`: headers del consumidor; mergean con los internos. Internos GANAN
  *   ante colisión (lowercase-normalize antes de merge — R8 mitigation).
@@ -22,6 +22,7 @@ import {
  */
 export interface OpcionesHttpClient {
   apiKey: string;
+  baseUrl: string;
   timeout: number;
   headersExtra?: Record<string, string> | undefined;
   fetchImpl: typeof globalThis.fetch;
@@ -45,10 +46,11 @@ export interface OpcionesRequest<T> {
  * @internal
  */
 const construirUrl = (
+  baseUrl: string,
   path: string,
   query: Record<string, string | number | boolean | undefined> | undefined,
 ): string => {
-  const url = new URL(path, SDK_API_URL);
+  const url = new URL(path, baseUrl);
   if (query !== undefined) {
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined || value === null) {
@@ -129,7 +131,7 @@ const esAbortError = (err: unknown): boolean => {
  * Cliente HTTP del SDK. Retorna funciones `get`, `post` con firma uniforme.
  *
  * Política de seguridad:
- * - URL base = `SDK_API_URL` inyectado en build-time. NUNCA overridable en runtime.
+ * - URL base = `baseUrl` (origin) validado por `crearCliente`; fijo durante la vida del cliente.
  * - `apiKey` NUNCA aparece en `error.message` ni en `cause` serializado.
  *
  * Triple AbortSignal (I5):
@@ -143,12 +145,12 @@ const esAbortError = (err: unknown): boolean => {
  * - AbortError externo (clientSignal o opSignal): Resultado falla 503 (no throw — contrato Result Pattern).
  */
 export const crearHttpClient = (opciones: OpcionesHttpClient) => {
-  const { apiKey, timeout, headersExtra, fetchImpl, clientSignal } = opciones;
+  const { apiKey, baseUrl, timeout, headersExtra, fetchImpl, clientSignal } = opciones;
 
   const request = async <T>(opts: OpcionesRequest<T>): Promise<Resultado<T>> => {
     const { method, path, body, query, schemaRespuesta, signal: opSignal } = opts;
 
-    const url = construirUrl(path, query);
+    const url = construirUrl(baseUrl, path, query);
     const tieneBody = body !== undefined;
     const headers = construirHeaders(apiKey, headersExtra, tieneBody);
     const { combined, timeoutSignal } = combinarSignals(clientSignal, opSignal, timeout);

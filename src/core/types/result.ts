@@ -1,7 +1,7 @@
 /**
  * Result Pattern — contrato público del SDK.
  *
- * Toda operación pública de @eva/procesador-pagos-sdk retorna `Promise<Resultado<T>>`.
+ * Toda operación pública de @eva_solutions/procesador-pagos-sdk retorna `Promise<Resultado<T>>`.
  * NUNCA throw para flujos de negocio.
  *
  * Excepciones documentadas:

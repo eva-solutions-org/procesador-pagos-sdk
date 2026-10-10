@@ -1,7 +1,7 @@
 /**
- * Entry point principal de `@eva/procesador-pagos-sdk`.
+ * Entry point principal de `@eva_solutions/procesador-pagos-sdk`.
  *
- * Subpath separado para webhooks: `@eva/procesador-pagos-sdk/webhooks`
+ * Subpath separado para webhooks: `@eva_solutions/procesador-pagos-sdk/webhooks`
  * (ver `src/webhooks.ts`). Esto permite que apps que sólo consumen
  * la API REST no carguen las primitivas WebCrypto del feature webhooks.
  */

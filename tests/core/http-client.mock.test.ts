@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { crearHttpClient } from '../../src/core/http-client/index.js';
 import { parsearRetryAfter } from '../../src/core/http-client/index.js';
 import { z } from 'zod';
-import { crearMockFetch, respuestaError, respuestaJsonData } from '../helpers/mock-fetch.js';
+import { BASE_URL_PRUEBA, crearMockFetch, respuestaError, respuestaJsonData } from '../helpers/mock-fetch.js';
 import { API_KEY_TEST } from '../helpers/fixtures.js';
 
 const schemaSimple = z.object({ ok: z.boolean() });
@@ -12,13 +12,31 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
     vi.clearAllMocks();
   });
 
+  describe('REQ-PAG-11 — URL = origin de baseUrl + path', () => {
+    it('builds_url_from_origin_and_path', async () => {
+      let urlLlamada = '';
+      const fetchMock = crearMockFetch((url) => {
+        urlLlamada = url;
+        return respuestaJsonData({ ok: true });
+      });
+      const http = crearHttpClient({
+        apiKey: API_KEY_TEST,
+        baseUrl: 'https://pagos.example.com',
+        timeout: 1000,
+        fetchImpl: fetchMock,
+      });
+      await http.get('/pagos', { query: { page: 2, estado: undefined }, schemaRespuesta: schemaSimple });
+      expect(urlLlamada).toBe('https://pagos.example.com/pagos?page=2');
+    });
+  });
+
   describe('REQ-HTTP-001 — header x-api-key y precedencia', () => {
     it('Given apiKey When request Then header x-api-key se envía con valor real', async () => {
       const fetchMock = crearMockFetch(() =>
         respuestaJsonData({ ok: true }),
       );
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -31,7 +49,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
     it('Given headersExtra con x-api-key tampering Then NO sobrescribe el real (interno gana)', async () => {
       const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: true }));
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         headersExtra: { 'x-api-key': 'TAMPER', 'x-trace-id': 'abc' },
         fetchImpl: fetchMock,
@@ -46,7 +64,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
     it('Given header MAYÚSCULAS X-API-KEY tampering Then lowercase-normalize y override interno', async () => {
       const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: true }));
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         headersExtra: { 'X-API-KEY': 'TAMPER-UPPER' },
         fetchImpl: fetchMock,
@@ -59,7 +77,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
     it('Given GET sin body Then no envía Content-Type', async () => {
       const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: true }));
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -71,7 +89,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
     it('Given request HTTP Then fija redirect:error para bloquear redirects automáticos', async () => {
       const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: true }));
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -83,7 +101,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
     it('Given POST con body Then envía Content-Type: application/json', async () => {
       const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: true }));
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -97,6 +115,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       const fetchMock = crearMockFetch(() => respuestaError(401, 'Token invalid'));
       const http = crearHttpClient({
         apiKey: 'pk_secret_xyz',
+        baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -114,7 +133,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
         throw new TypeError('Failed to fetch');
       }) as unknown as typeof globalThis.fetch;
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -131,7 +150,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
         throw new TypeError('redirect mode is set to error: received redirect');
       }) as unknown as typeof globalThis.fetch;
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -156,7 +175,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       }) as unknown as typeof globalThis.fetch;
 
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 50,
         fetchImpl: fetchMock,
       });
@@ -179,7 +198,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       }) as unknown as typeof globalThis.fetch;
 
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -196,7 +215,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
         () => new Response('<html>not-json</html>', { status: 200 }),
       );
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -208,7 +227,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
     it('Given safeParse fail Then 502 (Shape inesperado)', async () => {
       const fetchMock = crearMockFetch(() => respuestaJsonData({ ok: 'not-bool' }));
       const http = crearHttpClient({
-        apiKey: API_KEY_TEST,
+        apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA,
         timeout: 1000,
         fetchImpl: fetchMock,
       });
@@ -239,7 +258,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
           },
         }),
       );
-      const http = crearHttpClient({ apiKey: API_KEY_TEST, timeout: 1000, fetchImpl: fetchMock });
+      const http = crearHttpClient({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, timeout: 1000, fetchImpl: fetchMock });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       expect(r.success).toBe(false);
       if (!r.success) {
@@ -262,7 +281,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       [503, 'Servicio no disponible'],
     ])('Given HTTP %i Then codigo %i', async (status, defaultMsg) => {
       const fetchMock = crearMockFetch(() => respuestaError(status, defaultMsg));
-      const http = crearHttpClient({ apiKey: API_KEY_TEST, timeout: 1000, fetchImpl: fetchMock });
+      const http = crearHttpClient({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, timeout: 1000, fetchImpl: fetchMock });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       if (!r.success) expect(r.codigo).toBe(status);
     });
@@ -271,7 +290,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       const fetchMock = crearMockFetch(() =>
         respuestaError(429, 'Rate limit', { 'Retry-After': '30' }),
       );
-      const http = crearHttpClient({ apiKey: API_KEY_TEST, timeout: 1000, fetchImpl: fetchMock });
+      const http = crearHttpClient({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, timeout: 1000, fetchImpl: fetchMock });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       if (!r.success && r.codigo === 429) {
         expect(r.retryAfter).toBe(30);
@@ -282,7 +301,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
 
     it('Given HTTP 429 sin Retry-After Then retryAfter undefined', async () => {
       const fetchMock = crearMockFetch(() => respuestaError(429, 'Rate limit'));
-      const http = crearHttpClient({ apiKey: API_KEY_TEST, timeout: 1000, fetchImpl: fetchMock });
+      const http = crearHttpClient({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, timeout: 1000, fetchImpl: fetchMock });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       if (!r.success && r.codigo === 429) {
         expect(r.retryAfter).toBeUndefined();
@@ -295,7 +314,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       const fetchMock = crearMockFetch(() =>
         respuestaError(429, 'Rate limit', { 'Retry-After': 'not-a-number-and-not-date' }),
       );
-      const http = crearHttpClient({ apiKey: API_KEY_TEST, timeout: 1000, fetchImpl: fetchMock });
+      const http = crearHttpClient({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, timeout: 1000, fetchImpl: fetchMock });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       if (!r.success && r.codigo === 429) {
         expect(r.retryAfter).toBeUndefined();
@@ -308,7 +327,7 @@ describe('http-client — REQ-HTTP-001 (x-api-key) + REQ-HTTP-002 (mapeo errores
       const fetchMock = crearMockFetch(
         () => new Response('{}', { status: 418, headers: { 'content-type': 'application/json' } }),
       );
-      const http = crearHttpClient({ apiKey: API_KEY_TEST, timeout: 1000, fetchImpl: fetchMock });
+      const http = crearHttpClient({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, timeout: 1000, fetchImpl: fetchMock });
       const r = await http.get('/api/v1/test', { schemaRespuesta: schemaSimple });
       if (!r.success) {
         expect(r.codigo).toBe(502);

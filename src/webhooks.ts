@@ -1,5 +1,5 @@
 /**
- * Subpath entry point: `@eva/procesador-pagos-sdk/webhooks`.
+ * Subpath entry point: `@eva_solutions/procesador-pagos-sdk/webhooks`.
  *
  * Expone solo las primitivas de verificación HMAC-SHA256 + el wrapper
  * `verificarWebhookDesdeRequest`. Aislado del barrel principal para que

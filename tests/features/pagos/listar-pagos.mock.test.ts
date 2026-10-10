@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { crearCliente } from '../../../src/index.js';
-import { crearMockFetch, respuestaError, respuestaListarPagos } from '../../helpers/mock-fetch.js';
+import { BASE_URL_PRUEBA, crearMockFetch, respuestaError, respuestaListarPagos } from '../../helpers/mock-fetch.js';
 import { API_KEY_TEST, PAGO_RESUMEN_FIXTURE } from '../../helpers/fixtures.js';
 
 describe('listarPagos — REQ-PAGOS-003', () => {
@@ -19,7 +19,7 @@ describe('listarPagos — REQ-PAGOS-003', () => {
         totalPages: 1,
       });
     });
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     await cliente.pagos.listarPagos({ estado: 'completado', page: 2, limit: 50 });
     expect(urlLlamada).toContain('estado=completado');
     expect(urlLlamada).toContain('page=2');
@@ -32,7 +32,7 @@ describe('listarPagos — REQ-PAGOS-003', () => {
       urlLlamada = url;
       return respuestaListarPagos([], { total: 0, page: 1, limit: 20, totalPages: 0 });
     });
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     await cliente.pagos.listarPagos({});
     // El schema tiene .default(1) y .default(20), Zod los aplica.
     expect(urlLlamada).toContain('page=1');
@@ -41,7 +41,7 @@ describe('listarPagos — REQ-PAGOS-003', () => {
 
   it('Given limit > 100 Then 400 sin tocar red', async () => {
     const fetchMock = vi.fn() as unknown as typeof globalThis.fetch;
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.listarPagos({ limit: 200 });
     if (!r.success) expect(r.codigo).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -49,7 +49,7 @@ describe('listarPagos — REQ-PAGOS-003', () => {
 
   it('Given estado fuera del enum Then 400 sin tocar red', async () => {
     const fetchMock = vi.fn() as unknown as typeof globalThis.fetch;
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.listarPagos({
       estado: 'inexistente' as unknown as 'pendiente',
     });
@@ -59,7 +59,7 @@ describe('listarPagos — REQ-PAGOS-003', () => {
 
   it('Given 401 apiKey expirada Then propaga codigo 401', async () => {
     const fetchMock = crearMockFetch(() => respuestaError(401, 'API key invalida'));
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.listarPagos({});
     if (!r.success) {
       expect(r.codigo).toBe(401);
@@ -76,7 +76,7 @@ describe('listarPagos — REQ-PAGOS-003', () => {
         totalPages: 1,
       }),
     );
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const r = await cliente.pagos.listarPagos({});
     expect(r.success).toBe(true);
     if (r.success) {

@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { crearCliente } from '../../../src/index.js';
-import { crearMockFetch, respuestaError, respuestaListarPagos } from '../../helpers/mock-fetch.js';
+import { BASE_URL_PRUEBA, crearMockFetch, respuestaError, respuestaListarPagos } from '../../helpers/mock-fetch.js';
 import { API_KEY_TEST, PAGO_RESUMEN_FIXTURE } from '../../helpers/fixtures.js';
 
 describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
@@ -21,7 +21,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
       return respuestaListarPagos([p3], { total: 3, page: 2, limit: 2, totalPages: 2 });
     });
 
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const ids: string[] = [];
     for await (const pago of cliente.pagos.iterarPagos({ estado: 'pendiente', limit: 2 })) {
       // pago.id accesible SIN narrowing por success — confirma que es Pago directo
@@ -40,7 +40,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
       return respuestaError(500, 'Internal Server Error');
     });
 
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const ids: string[] = [];
     let caught: Error | undefined;
     try {
@@ -60,7 +60,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
     const fetchMock = vi.fn(async () => {
       throw new TypeError('Failed to fetch');
     }) as unknown as typeof globalThis.fetch;
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
 
     let caught: Error | undefined;
     try {
@@ -82,7 +82,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
       return respuestaListarPagos([], { total: 0, page: 1, limit: 100, totalPages: 0 });
     }) as unknown as typeof globalThis.fetch;
 
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     for await (const _p of cliente.pagos.iterarPagos({}, { signal: ctrl.signal })) {
       // empty
     }
@@ -102,7 +102,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
       return respuestaListarPagos([], { total: 4, page: 2, limit: 2, totalPages: 2 });
     });
 
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     const ids: string[] = [];
     for await (const pago of cliente.pagos.iterarPagos({ limit: 2 })) {
       ids.push(pago.id);
@@ -114,12 +114,12 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
   });
 
   it('Given filtros.limit > 100 Then throw síncrono (I6)', () => {
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: crearMockFetch(() => new Response()) });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: crearMockFetch(() => new Response()) });
     expect(() => cliente.pagos.iterarPagos({ limit: 200 }).next()).toThrow(/limit/);
   });
 
   it('Given filtros.limit < 1 Then throw síncrono (I6)', () => {
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: crearMockFetch(() => new Response()) });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: crearMockFetch(() => new Response()) });
     expect(() => cliente.pagos.iterarPagos({ limit: 0 }).next()).toThrow(/limit/);
   });
 
@@ -130,7 +130,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
       if (m) limitVisto = m[1] ?? '';
       return respuestaListarPagos([], { total: 0, page: 1, limit: 50, totalPages: 0 });
     });
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     for await (const _p of cliente.pagos.iterarPagos({ limit: 50 })) {
       // empty
     }
@@ -144,7 +144,7 @@ describe('iterarPagos — REQ-PAGOS-004 (C3 + I3 + I6)', () => {
       if (m) limitVisto = m[1] ?? '';
       return respuestaListarPagos([], { total: 0, page: 1, limit: 100, totalPages: 0 });
     });
-    const cliente = crearCliente({ apiKey: API_KEY_TEST, fetch: fetchMock });
+    const cliente = crearCliente({ apiKey: API_KEY_TEST, baseUrl: BASE_URL_PRUEBA, fetch: fetchMock });
     for await (const _p of cliente.pagos.iterarPagos({})) {
       // empty
     }
