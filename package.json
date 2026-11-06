@@ -1,6 +1,6 @@
 {
   "name": "@eva_solutions/procesador-pagos-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "SDK TypeScript para consumir el servicio Procesador-de-pagos",
   "type": "module",
   "main": "./dist/index.cjs",
