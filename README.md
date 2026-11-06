@@ -373,40 +373,104 @@ El artefacto es el mismo para todos los entornos: no hay variables de entorno de
 
 ## 🚀 Publicación (mantenedores)
 
-Los releases salen de GitHub Actions con [Changesets](https://github.com/changesets/changesets): cada cambio publicable lleva un archivo en `.changeset/`; al llegar a `main`, el workflow `release.yml` abre un "Version PR" y, al mergearlo, publica en npm con provenance.
+Los releases salen de GitHub Actions con [Changesets](https://github.com/changesets/changesets): cada cambio publicable lleva un archivo en `.changeset/`; `development` publica un snapshot con el tag `dev` y, al llegar a `main`, el workflow `release.yml` abre un "Version PR" (sube versión y CHANGELOG, no publica) y la publicación estable sale al crear una GitHub Release `vX.Y.Z` desde `main`, con provenance.
 
 `[AUTH]` marca una acción externa o irreversible (push, PR, merge, secretos, publicación en npm): requiere autorización explícita del mantenedor **para esa acción**; no se encadenan ni se automatizan.
+
+### Tres entornos
+
+El SDK sigue el modelo del ecosistema: local, development y production. Nada se commitea con `file:` ni con un tarball; los consumidores instalan desde npm.
+
+| Entorno     | Rama          | Se publica como                                  | Instalación                                                                                                           |
+| ----------- | ------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| local       | cualquiera    | no se publica (link)                             | `pnpm link`, abajo                                                                                                    |
+| development | `development` | snapshot `X.Y.Z-dev-<timestamp>`, dist-tag `dev` | `npm i @eva_solutions/procesador-pagos-sdk@dev`, o fija la versión exacta del snapshot (`...@0.3.0-dev-<timestamp>`) |
+| production  | `main`        | estable `X.Y.Z`, dist-tag `latest`               | `npm i @eva_solutions/procesador-pagos-sdk`                                                                           |
+
+El `X.Y.Z` del snapshot es la versión que producirán los changesets pendientes (`snapshot.useCalculatedVersion` en `.changeset/config.json`). El tag `@dev` se mueve con cada snapshot; quien necesite instalaciones reproducibles fija la versión exacta. Un push a `development` sin changesets pendientes no publica nada (el snapshot solo sale si `changeset version --snapshot dev` cambia el `package.json`). Los changesets siguen en `development` hasta que el Version PR se mergea en `main` y `main` vuelve a `development` (back-merge, ver el flujo); mientras tanto cada push a `development` publica un snapshot nuevo con el mismo `X.Y.Z`.
+
+Link en local:
+
+```bash
+pnpm build                          # raíz del repo
+pnpm link --global
+cd <consumidor> && pnpm link --global @eva_solutions/procesador-pagos-sdk
+```
+
+Vuelve a correr `pnpm build` tras cada cambio del SDK. Deshaz el link en el consumidor con `pnpm unlink @eva_solutions/procesador-pagos-sdk` y `pnpm install`. No commitees el link en el `package.json` del consumidor.
+
+Flujo de ramas: crea tu rama desde `development` y abre el PR contra `development`; una vez validado el snapshot, `development` pasa a `main` con otro PR.
 
 ### Flujo normal
 
 1. `pnpm changeset` y commitea el archivo generado junto con el cambio.
-2. Merge a `main` `[AUTH]`: `release.yml` abre (o actualiza) el Version PR.
-3. Revisa el Version PR y mergéalo `[AUTH]`: publica la versión y crea el GitHub Release.
-4. Verifica: `npm view @eva_solutions/procesador-pagos-sdk version`.
+2. Merge del PR a `development` `[AUTH]`: en `release.yml`, el job `checks` (lint, typecheck, test, build) y luego el job `snapshot` publican `X.Y.Z-dev-<timestamp>` con el tag `dev` (sin tags de git ni commits; con los checks en rojo no se publica). Valida el snapshot y mergea `development` en `main` `[AUTH]`: el job `version-pr` abre (o actualiza) el Version PR.
+3. Revisa el Version PR y mergéalo `[AUTH]`: sube la versión y el CHANGELOG en `main`, pero no publica.
+4. Crea la GitHub Release `vX.Y.Z` desde `main` `[AUTH]` (no prerelease; `X.Y.Z` = versión de `package.json`): el job `publish` corre primero los `checks` sobre el commit del tag (no hace falta esperar al CI), valida que el tag sea `v<versión>` y que su commit esté en `main` (si no, falla sin publicar) y publica con dist-tag `latest`. Las prereleases se ignoran.
+5. **Back-merge** `[AUTH]`: abre un PR `main` → `development` (Version PR y CHANGELOG incluidos). Sin él, `development` conserva los changesets ya liberados y publica snapshots de una versión que ya salió.
+6. Verifica: `npm view @eva_solutions/procesador-pagos-sdk dist-tags`.
+
+Casos a conocer:
+
+- Una prerelease promovida a release no dispara `published`: crea una Release nueva (no prerelease).
+- Una Release de una versión que ya existe en npm termina sin publicar (`changeset publish` omite lo ya publicado) y el job no falla.
 
 > **Los Version PR no disparan CI.** Los PR abiertos con el `GITHUB_TOKEN` del workflow no inician otros workflows. Por eso `main` no debe exigir status checks obligatorios; si quieres CI sobre un Version PR, ciérralo y reábrelo.
 
+### Environment `npm` (publicación protegida)
+
+Los jobs `snapshot` y `publish` declaran `environment: npm`, que limita desde qué refs se puede publicar (segunda capa, además de las condiciones del workflow). Créalo una vez `[AUTH]`:
+
+```bash
+gh api -X PUT repos/eva-solutions-org/procesador-pagos-sdk/environments/npm   -F 'deployment_branch_policy[protected_branches]=false'   -F 'deployment_branch_policy[custom_branch_policies]=true'
+gh api -X POST repos/eva-solutions-org/procesador-pagos-sdk/environments/npm/deployment-branch-policies -f name=development -f type=branch
+gh api -X POST repos/eva-solutions-org/procesador-pagos-sdk/environments/npm/deployment-branch-policies -f name='v*' -f type=tag
+```
+
+Verifica con `gh api repos/eva-solutions-org/procesador-pagos-sdk/environments/npm/deployment-branch-policies`. La rama `development` cubre el snapshot y el tag `v*` cubre la Release. El trusted publisher de npm se configura con Environment `npm`, y `NPM_TOKEN`, mientras exista, va como secreto del Environment, no del repo.
+
+**Los repos de SDK deben ser PÚBLICOS.** En GitHub Free, las reglas de rama y tag de un Environment (deployment branch policy) y los rulesets solo se aplican en repos públicos; en uno privado no restringen nada.
+
+**Riesgo residual.** Aun con el Environment, quien tenga permiso de escritura puede crear un tag `v*` sobre otro commit y esa ref pasa la política del Environment. El cierre recomendado es un tag ruleset (gratuito en repos públicos) que restrinja la creación de `v*` a admins `[AUTH]`:
+
+```bash
+gh api -X POST repos/eva-solutions-org/procesador-pagos-sdk/rulesets --input - <<'JSON'
+{
+  "name": "protect-release-tags",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
+  "rules": [{ "type": "creation" }],
+  "bypass_actors": [{ "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }]
+}
+JSON
+```
+
+`actor_id: 5` es el rol de repositorio Admin. Verifica con `gh api repos/eva-solutions-org/procesador-pagos-sdk/rulesets` (`target: tag`, `enforcement: active`).
+
 ### Primera publicación (una sola vez)
+
+> **Primera publicación desde `development`.** El job `snapshot` también usa `NPM_TOKEN` si existe (si no, OIDC), así que la primera publicación puede salir de `development` una vez creado el secreto. El paquete nace entonces con una versión `X.Y.Z-dev-<timestamp>` y el tag `dev`. No está verificado si el registro asigna `latest` a esa primera versión: comprueba `npm view @eva_solutions/procesador-pagos-sdk dist-tags` tras el primer snapshot. Si `latest` apunta a un `-dev-`, el paso `Ensure latest is not a snapshot` intenta quitarlo con `npm dist-tag rm` (con el token si existe; con OIDC solo si npm >= 11.21.0 y el trusted publisher tiene "Allow npm dist-tag"). Si falla deja un warning sin poner el job en rojo, y lo quitas a mano con `npm dist-tag rm @eva_solutions/procesador-pagos-sdk latest`.
 
 Condiciones previas, `[AUTH]` cada una:
 
 1. Ser miembro/owner del scope npm `eva_solutions` (`npm org ls eva_solutions`).
 2. Crear el repo público **vacío** `eva-solutions-org/procesador-pagos-sdk` (sin README, licencia ni `.gitignore`) y habilitar, en la organización y luego en el repo, "Allow GitHub Actions to create and approve pull requests" (la organización puede bloquear la casilla del repo).
-3. No configurar status checks ni rulesets obligatorios sobre `main`.
-4. Publicar `main` con un único commit raíz: `git push -u origin main`; comprueba que `git rev-parse --abbrev-ref --symbolic-full-name "@{upstream}"` devuelve `origin/main` y que `git rev-list --count origin/main` es `1`.
+3. No configurar status checks obligatorios sobre `main` (los Version PR no disparan CI). El único ruleset previsto es el de tags `v*` descrito en [Environment `npm`](#environment-npm-publicación-protegida); no restringe `main`.
+4. Publicar `main` con un único commit raíz: `git push -u origin main`; comprueba que `git rev-parse --abbrev-ref --symbolic-full-name "@{upstream}"` devuelve `origin/main` y que `git rev-list --count origin/main` es `1`. Luego publica `development` con `git push -u origin development` (misma comprobación de upstream).
 5. Antes de mergear el Version PR, el CI de `ci.yml` disparado por ese push debe estar en verde.
 
 Publicación inicial con token (el paquete aún no existe, así que no se puede configurar trusted publishing):
 
 1. Crea en npmjs.com un token granular: expiración 7 días, lectura y escritura sobre el scope `eva_solutions`, con "Bypass 2FA" `[AUTH]`.
-2. Guárdalo como secreto `NPM_TOKEN` del repo desde la UI de GitHub o con `gh secret set NPM_TOKEN` y el valor escrito en el prompt interactivo `[AUTH]`. Nunca en argumentos, archivos, logs ni chats.
-3. Mergea el Version PR (`0.3.0`) `[AUTH]` y confirma `npm view @eva_solutions/procesador-pagos-sdk@0.3.0 version`.
+2. Guárdalo como secreto `NPM_TOKEN` del Environment `npm` (no del repo) desde la UI de GitHub o con `gh secret set NPM_TOKEN --env npm --repo eva-solutions-org/procesador-pagos-sdk` y el valor escrito en el prompt interactivo `[AUTH]`. Nunca en argumentos, archivos, logs ni chats.
+3. Mergea el Version PR (`0.3.0`) `[AUTH]`, crea la GitHub Release `v0.3.0` desde `main` `[AUTH]` y confirma `npm view @eva_solutions/procesador-pagos-sdk@0.3.0 version`.
 
 ### Cambio a trusted publishing (dentro de los 2 días siguientes)
 
-1. En npmjs.com, configura el trusted publisher del paquete `[AUTH]`: organización `eva-solutions-org`, repo `procesador-pagos-sdk`, workflow `release.yml`, **sin** environment.
-2. Abre un PR `[AUTH]` que quita de `release.yml` la línea `NPM_TOKEN: ${{ secrets.NPM_TOKEN }}` y su comentario, con un changeset `patch`. Mergéalo `[AUTH]` y mergea el Version PR resultante (`0.3.1`) `[AUTH]`.
-3. Comprueba que el log del workflow dice "No NPM_TOKEN found, but OIDC is available" y que npmjs.com muestra provenance en `0.3.1`. Si falla, **no** revoques el token todavía.
+1. En npmjs.com, configura el trusted publisher del paquete `[AUTH]`: organización `eva-solutions-org`, repo `procesador-pagos-sdk`, workflow `release.yml`, Environment `npm`.
+2. Abre un PR `[AUTH]` que quita de `release.yml` el paso `Configure bootstrap token (only if the secret exists)` (en `snapshot` y en `publish`), las líneas `NPM_TOKEN: ${{ secrets.NPM_TOKEN }}` de los pasos de publicación y de `Ensure latest is not a snapshot`, y sus comentarios `Bootstrap only`, con un changeset `patch`. Mergéalo `[AUTH]`, mergea el Version PR resultante (`0.3.1`) `[AUTH]` y crea la Release `v0.3.1` `[AUTH]`.
+3. Comprueba que el paso de publicación del job `publish` no usa token (el log de `changeset publish` muestra la publicación sin errores de autenticación), que `npm view @eva_solutions/procesador-pagos-sdk@0.3.1 version` devuelve `0.3.1` y que npmjs.com muestra provenance en `0.3.1`. Si falla, **no** revoques el token todavía.
 4. Solo tras esa verificación: revoca el token en npm y borra el secreto `NPM_TOKEN` `[AUTH]`.
 
 Si la confianza caduca o falla: borra y vuelve a crear la configuración del trusted publisher `[AUTH]` y publica por OIDC con otro PR `patch`; no hace falta un token porque el paquete ya existe.

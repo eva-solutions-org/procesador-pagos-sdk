@@ -41,13 +41,13 @@ __SDK_API_URL__ = "https://<host-production>"; // URL de producción (omitida)
 crearCliente({ apiKey /* SIN url */ });
 ```
 
-Tres versiones distintas del SDK son publicadas (una por entorno):
+Se planeaban tres versiones del SDK, una por entorno. Desde ADR-022 hay un solo artefacto y los entornos se distinguen por dist-tag de npm (la URL la pasa el consumidor con `baseUrl`):
 
-| Versión                           | URL inyectada                 |
-| --------------------------------- | ----------------------------- |
-| `@eva_solutions/procesador-pagos-sdk@local` | `http://localhost:6000`       |
-| `@eva_solutions/procesador-pagos-sdk@dev`   | URL development (placeholder) |
-| `@eva_solutions/procesador-pagos-sdk@prod`  | URL production (placeholder)  |
+| Entorno     | Publicación                                                     |
+| ----------- | --------------------------------------------------------------- |
+| local       | no se publica; se usa `pnpm link`                               |
+| development | snapshot `X.Y.Z-dev-<timestamp>` con dist-tag `dev` (`...@dev`) |
+| production  | versión estable `X.Y.Z` con dist-tag `latest`                   |
 
 ### Consecuencias
 
@@ -260,7 +260,7 @@ try {
 
 ### Contexto
 
-`prepublishOnly` corre `typecheck && test:run && build:prod`. Pero `npm publish --ignore-scripts` bypassea esto. Un desarrollador podría publicar accidentalmente un build con URL `localhost` y `__SDK_BUILD_ENV__='production'`.
+`prepublishOnly` corre hoy `lint && typecheck && test:run && build`; en 0.2 corría `build:prod`, que ya no existe (ADR-022). Pero `npm publish --ignore-scripts` bypassea esto. En 0.2 un desarrollador podía publicar accidentalmente un build con URL `localhost` y `__SDK_BUILD_ENV__='production'`; `__SDK_BUILD_ENV__` ya no existe.
 
 ### Decisión
 
